@@ -29,14 +29,17 @@ The file layout (datasets and attributes) is documented in
 
 - `src/jscan/`: Julia project `JScan`, the processing side (reads the runs,
   will hold the per-event passes). Tests in `src/jscan/test/`.
-- `src/py/`: Python scripts for plots and quick looks. `wfview.py` is the
-  waveform viewer; it reads the raw HDF5 files with h5py. Figures it saves go
-  to `src/py/plots/` (not in git).
+- `src/py/`: Python scripts for plots and quick looks, reading the raw HDF5
+  files with h5py. `wfview.py` is the waveform viewer, `runinfo.py` tabulates
+  the run conditions and trigger rates, `selection.py` walks through the
+  event selection one event at a time. Figures they save go to
+  `src/py/plots/` (not in git).
 - `src/h5lzf/`: the LZF compression filter of h5py as an HDF5 plugin, needed
   for Julia to read the LZF-compressed files (h5py has it built in). See
   below.
 - `docs/`: LaTeX documentation, one file per module or script
-  (`jscan_doc.tex`, `wfview_doc.tex`).
+  (`jscan_doc.tex`, `wfview_doc.tex`, `runinfo_doc.tex`,
+  `selection_doc.tex`); the figures they include are in `docs/figs/`.
 - `nb/`: notebooks received from the authors, kept as received.
 
 ## Setup
@@ -70,3 +73,26 @@ reads a real run and is skipped if the data symlink is absent.
     python3 src/py/wfview.py 187K_38d5V_th19 --average --save 187K
 
 See `docs/wfview_doc.tex` for the arguments and what each figure shows.
+
+## Run conditions and trigger rates
+
+    python3 src/py/runinfo.py --save scan
+
+One line per run: start time, the three thermometers, bias, threshold,
+duration, recorded rate, and the true trigger rate from the board's 24-bit
+trigger counter, plus a figure of trigger rate versus bias and temperature.
+The readout is saturated at 123 Hz in every run while the board triggers at
+1.9 to 225 kHz, mostly dark-count coincidences. See `docs/runinfo_doc.tex`.
+
+## Event selection, step by step
+
+    python3 src/py/selection.py 197K_39V_th20 --events 0-9
+
+Ten steps per event, each with its numbers on the terminal and a figure:
+common-mode estimate with the pulse region interpolated, baseline, pulse
+search, charge, multiplicity, and the verdict REAL, TAIL (pulse started
+before the record) or EMPTY, with a PILE-UP flag when a second maximum is
+separated from the first by a valley. Enter advances, `n` skips to the next
+event, `q` quits; `--save NAME` runs without prompts and saves the figures.
+`docs/selection_doc.tex` defines every quantity and walks through one event
+with its figures.
