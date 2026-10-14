@@ -41,6 +41,64 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   decide whether the factor 1.8 is in the light (position, dead block)
   or in our per-channel charge.
 
+### The 39 V peak is the 1275 keV line: the trigger loses the 511 keV events below 40 V (`src/py/offline.py`, bias scan at 196 K)
+
+- Correction by seed channel (offline.py, new charge Q_0_pos = Q_0_eq
+  divided by the photopeak position of the seed channel of the event,
+  relative to the median, measured on the run itself; documented in
+  offline_doc.tex). Photopeak FWHM Q_0_eq -> Q_0_pos: 41 V 46 -> 22%,
+  40.5 V 39 -> 20%, 40 V 38 -> 19%, 39 V 45 -> 41% (39.7% with channel
+  48 dropped: dropping it changes little). At 39.5 V the correction is
+  meaningless (two lines of similar weight, the per-channel peak is
+  either). The 41 V corrected peak is visibly narrower with a shoulder
+  on its low side; the fit sits on the core.
+- The correction worked at 41 V and not at 39 V because the two runs
+  do not show the same line. Q_0 spectra of the 196 K bias scan (REAL
+  without pile-up; figure docs/figs/offline_196K_39d5V_spectra.png):
+
+  | Bias | Trigger | 511 peak | 1275 peak | ratio |
+  |---|---|---|---|---|
+  | 41 V | 225 kHz | 540k | 1350k | 2.5 |
+  | 40.5 V | 148 kHz | 420k | 1000k | 2.4 |
+  | 40 V | 97 kHz | 350k | 780k | 2.2 |
+  | 39.5 V | 29 kHz | 280k | 530k | 1.9 |
+  | 39 V | 2.7 kHz | absent (would be near 220k) | 430k | |
+
+  At 39.5 V two clean peaks, the upper with more events (2050 against
+  1460); at 39 V the lower is gone (a few dozen events near 220k to
+  260k, the "multiplicity <= 6" class), and only 22 of 4133 events lie
+  above 1.8 times the peak against 899 of 3863 at 41 V. Everything
+  measured on 197K_39V_th20 (the 45% width, the seed-channel spread, the
+  multiplicity split) was the 1275 keV line.
+- Mechanism: the single-photoelectron pulse falls from 20.7 counts at
+  41 V to about 14 at 39 V through the 20-count threshold. Below
+  40.5 V a channel fires only on two photoelectrons piled within the
+  24 ns pulse; a 511 keV event gives about one photoelectron per 20 ns
+  in its brightest channel over the 2.7 us decay and crosses only on a
+  fluctuation (hence the late triggers and the TAIL events); a 1275 keV
+  event has 2.5 times the rate and always triggers. The ratio of the
+  peaks falling from 2.5 to 1.9 is the same effect: the trigger keeps
+  the bright side of the 511 peak and pushes its recorded position up.
+  The 39 V test of the morning was not the test intended; its
+  conclusion on the noise (the width does not follow the noise) stands.
+- Resolution of the 511 keV line after the seed-channel correction:
+  20% at 40.5 V and 19% at 40 V with a noise term (2.355 sigma_Q / peak)
+  of 13%, leaving about 15% in quadrature, inside the expected 10 to
+  15%. To be confirmed by eye on the fits (the shoulder, the uncorrected
+  events) before quoting. At 41 V the 28% noise term of the full sum
+  overestimates the noise of Q_0 (22% observed).
+- Consequence for the whole scan: the nominal-bias runs have
+  overvoltages of 4.8 to 5.8 V, single-photoelectron pulses of roughly
+  15 to 18 counts against a 19-count threshold, the regime of 39.5 to
+  40 V here; their 511 keV peaks may be sculpted the same way. The runs
+  at 39 V (197 K) and 38.5 V (187 K) are 1275 keV runs for the 511 keV
+  yield. NEXT: the Q_0 spectra of every run with the 511 to 1275 ratio
+  and the two-peak structure as the check (a pass per run, then
+  offline.py), before any light yield versus temperature.
+- Figures kept: docs/figs/offline_196K_39d5V_spectra.png (the two
+  lines), docs/figs/offline_197K_39V_seedmap.png (the response map at
+  39 V, on the 1275 keV line).
+
 ### The photopeak position depends on the seed channel: light collection, not gain (`src/py/offline.py`)
 
 - offline.py now locates the photopeak per seed channel (the live channel

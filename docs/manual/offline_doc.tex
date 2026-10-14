@@ -135,8 +135,8 @@ in $\Delta t$; a pile of entries just outside the window would be the tail
 of the main pulse passing as a second one.
 
 \paragraph{Spectra and photopeak.} For the REAL events without pile-up,
-the histogram of each of the seven charges ($Q$ and the six from the
-channels), 200 bins from zero to the 99.5th percentile. The photopeak is
+the histogram of each of the eight charges ($Q$, the six from the
+channels and $Q^{\rm pos}_0$ below), 200 bins from zero to the 99.5th percentile. The photopeak is
 located as the highest maximum of the smoothed histogram: the 511~keV
 peak dominates the spectrum, the Compton continuum lies below it and the
 1275~keV line is weaker (a rule that took the rightmost maximum above a
@@ -181,6 +181,19 @@ the gain table moves the peaks; a spread that follows the map and not the
 gain factors is light collection. Figure \code{seedmap}: the position, the
 width and the number of events on the map of the channels.
 
+\paragraph{Response correction by seed channel.} The eighth charge,
+$Q^{\rm pos}_0 = Q^{\rm eq}_0 / f_{\rm seed}$, divides the charge of the
+event by the $Q^{\rm eq}_0$ photopeak position of its seed channel
+relative to the median of the positions, taken from the groups above
+(events whose seed channel has fewer than 40 events are left
+uncorrected; their number is printed). It is fitted, written and plotted
+like the other seven, and the splits by multiplicity and $t_{\max}$ are
+printed for $Q^{\rm eq}_0$ and for $Q^{\rm pos}_0$. The factors are
+measured on the run itself, with the events of the run: a mild
+overfit (one parameter per 40 events at least) and, when the spectrum
+holds two lines of similar weight, a meaningless one, since the located
+peak of a group may be either line (196K\_39d5V\_th20, 2026-10-15).
+
 \paragraph{Average pulse and decay time.} The mean of $S$ over the REAL
 events without pile-up, each shifted so that its $i_{\max}$ falls on a
 common sample, over the samples all of them cover. The decay is fitted
@@ -208,8 +221,8 @@ decay time, and the channels without an equalization factor.
 nev: \code{index}, \code{cls} (0 EMPTY, 1 REAL, 2 TAIL), \code{pileup},
 \code{dt\_pile}, \code{t\_max}, \code{H}, \code{t\_rise}, \code{Q},
 \code{Q\_ctrl}, \code{Q\_all}, \code{Q\_0}, \code{Q\_kept},
-\code{Q\_all\_eq}, \code{Q\_0\_eq}, \code{Q\_kept\_eq}, \code{mult},
-\code{seed}, \code{d\_dead}; the
+\code{Q\_all\_eq}, \code{Q\_0\_eq}, \code{Q\_kept\_eq}, \code{Q\_0\_pos},
+\code{mult}, \code{seed}, \code{d\_dead}; the
 average pulse as \code{pulse} with its time axis; the options and the
 input files as attributes.
 
@@ -242,6 +255,10 @@ python3 src/py/offline.py 195K_41V_th20 --save off195
 
 # a cold run with a long window and a long decay range
 python3 src/py/offline.py 128K_37V_th19 --window 1000,12000 --decay-range 1,10 --save off128
+
+# the figures kept in docs/figs (2026-10-15): the two lines at 39.5 V and the map at 39 V
+python3 src/py/offline.py 196K_39d5V_th20 --save 196K_39d5V   # -> offline_196K_39d5V_spectra.png
+python3 src/py/offline.py 197K_39V_th20 --save 197K_39V       # -> offline_197K_39V_seedmap.png
 \end{lstlisting}
 
 \end{document}

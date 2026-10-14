@@ -24,7 +24,7 @@ from bgo.plot import map8
 DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
 GAIN = REPO / "src" / "spe_gain_195K_41V_th20.csv"
 CLASSES = ("EMPTY", "REAL", "TAIL")
-ESTIMATORS = ("Q", "Q_all", "Q_0", "Q_kept", "Q_all_eq", "Q_0_eq", "Q_kept_eq")
+ESTIMATORS = ("Q", "Q_all", "Q_0", "Q_kept", "Q_all_eq", "Q_0_eq", "Q_kept_eq", "Q_0_pos")
 
 
 def attr_str(a):
@@ -133,7 +133,6 @@ def main():
     sel = (cls == 1) & ~pile
     frac = {n: float((cls == i).mean()) for i, n in enumerate(CLASSES)}
     pile_frac = float(pile[cls == 1].mean()) if (cls == 1).any() else np.nan
-    fits = {n: fit_photopeak(v[sel]) for n, v in est.items()}
     # resolution against the distance of the seed channel to the dead block
     print(f"  seed channel distance to the nearest dead channel, Q_0_eq photopeak (REAL without pile-up):")
     for lab, m in (("on the block (< 6 mm)", d_dead < 6), ("next to it (6 to 12 mm)", (d_dead >= 6) & (d_dead < 12)),
@@ -172,11 +171,23 @@ def main():
         print("  per seed channel: events, Q_0 peak / median, Q_0_eq peak / median, gain factor, Q_0_eq FWHM")
         for c in sorted(pos_map, key=lambda c: pos_map[c] / np.median(pv)):
             print(f"    ch {c:2d}: {n_map[c]:4d}  {pos0[c] / med0:5.2f}  {pos_map[c] / np.median(pv):5.2f}  g {g_tab.get(c, 1.0):4.2f}  {100 * wid_map[c]:3.0f}%")
-    for lab, m in (("multiplicity <= 6", mult <= 6), ("multiplicity 7 to 10", (mult > 6) & (mult <= 10)), ("multiplicity > 10", mult > 10),
-                   ("t_max < 0.3 us", t[imax] < 300), ("t_max >= 0.3 us", t[imax] >= 300)):
-        fi = fit_photopeak(vals[sel & m])
-        print(f"    {lab:22s}: {int((sel & m).sum()):5d} events, " + (f"peak {fi['mu']:.4g}, FWHM {100 * fi['fwhm_rel']:.1f}%"
-              if fi["ok"] else f"no fit ({fi['why']})"))
+    # response correction by seed channel: the charge of the event divided by the photopeak position of its
+    # seed channel relative to the median (channels with fewer than 40 events: no correction)
+    f_seed = np.array([pos_map.get(c, np.nan) / np.median(pv) if pos_map else np.nan for c in channels])
+    f_ev = f_seed[seed]
+    no_f = sel & ~np.isfinite(f_ev)
+    est["Q_0_pos"] = np.where(np.isfinite(f_ev), est["Q_0_eq"] / np.where(np.isfinite(f_ev), f_ev, 1.0), est["Q_0_eq"])
+    print(f"  Q_0_pos = Q_0_eq / f(seed channel), f from the peaks above; {int(no_f.sum())} of {int(sel.sum())} events "
+          f"with a seed channel without factor (left as they are)")
+    fits = {n: fit_photopeak(v[sel]) for n, v in est.items()}
+    for name in ("Q_0_eq", "Q_0_pos"):
+        vals = est[name]
+        print(f"  {name} by multiplicity and time of the maximum:")
+        for lab, m in (("multiplicity <= 6", mult <= 6), ("multiplicity 7 to 10", (mult > 6) & (mult <= 10)), ("multiplicity > 10", mult > 10),
+                       ("t_max < 0.3 us", t[imax] < 300), ("t_max >= 0.3 us", t[imax] >= 300)):
+            fi = fit_photopeak(vals[sel & m])
+            print(f"    {lab:22s}: {int((sel & m).sum()):5d} events, " + (f"peak {fi['mu']:.4g}, FWHM {100 * fi['fwhm_rel']:.1f}%"
+                  if fi["ok"] else f"no fit ({fi['why']})"))
     # average pulse of the REAL events without pile-up, aligned on the maximum
     centre = 300
     acc = np.zeros(ns); cnt = np.zeros(ns)
@@ -265,7 +276,6 @@ def main():
         ax.set(title=n, xlabel="ADC ns", ylabel="events")
         ax.title.set_fontsize(9)
         ax.grid(lw=0.3)
-    axs.flat[-1].axis("off")
     fig.suptitle(f"{run}: charge spectra of the REAL events without pile-up ({sel.sum()})", x=0.01, ha="left")
     fig.tight_layout(); figs["spectra"] = fig
 
