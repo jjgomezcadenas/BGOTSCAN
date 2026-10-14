@@ -13,6 +13,7 @@ CLAUDE.md
 __pycache__/
 .ipynb_checkpoints/
 src/py/plots/
+pass/
 .DS_Store
 
 # LaTeX build files

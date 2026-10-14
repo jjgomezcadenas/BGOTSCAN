@@ -373,9 +373,9 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
             A["jscan_version"] = string(pkgversion(JScan))
             A["date"] = string(now())
             commit = try
-                readchomp(`git -C $(dirname(abspath(runpath))) rev-parse --short HEAD`)
+                readchomp(pipeline(`git -C $(@__DIR__) rev-parse --short HEAD`, stderr = devnull))
             catch
-                try readchomp(`git -C $(@__DIR__) rev-parse --short HEAD`) catch; "" end
+                ""
             end
             A["git_commit"] = commit
         end
