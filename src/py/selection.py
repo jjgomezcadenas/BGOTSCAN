@@ -23,7 +23,8 @@ from bgo.signal import smooth, rms, baseline_window, pulse_search, windows, inte
 from bgo.plot import Stepper, grid64
 
 WRAP = 2 ** 24
-CM_METHODS = ("median", "interp", "none")     # not the mean: it makes the sum identically zero
+CM_METHODS = ("dead", "interp", "median", "none")   # not the mean: it makes the sum identically zero
+DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"           # chanstat_doc.tex, 2026-10-14
 STEPS = ("read", "common-mode analysis", "locate the pulse (provisional)", "interpolate m across W",
          "subtract and sum", "baseline", "pulse search", "charge", "multiplicity", "verdict",
          "zero suppression: charge kept vs threshold", "zero suppression: the kept channels")
@@ -42,21 +43,26 @@ def step1(ev, st):
     return st.show(1, fig)
 
 
-def step2(ev, st, out):
+def step2(ev, st, out, args):
     x, t = ev["x"], ev["t"]
     m = np.median(x, axis=0)                     # one value per sample
     r = x - m
     rx, rr = np.mean([rms(v) for v in x]), np.mean([rms(v) for v in r])
-    out.update(m=m)
+    rows = [k for k, c in enumerate(ev["channels"]) if int(c) in args.dead]
+    md = smooth(x[rows].mean(axis=0), args.cm_smooth) if rows else np.zeros_like(m)
+    out.update(m=m, md=md)
     print(f"step 2: m[i] = median over the {len(x)} channels of x[c,i], one value per sample: "
           f"rms {rms(m):.2f} ADC; channel rms {rx:.2f}, residual (channel minus m) rms {rr:.2f}, "
           f"coherent fraction {1 - rr**2 / rx**2:.2f}; rms of m after 0.1 / 1 / 10 us smoothing: "
-          + " / ".join(f"{rms(smooth(m, n)):.2f}" for n in (12, 125, 1250)))
+          + " / ".join(f"{rms(smooth(m, n)):.2f}" for n in (12, 125, 1250))
+          + f"; dead-channel mean ({len(rows)} channels, smoothed over {args.cm_smooth} samples): rms {rms(md):.2f}")
     fig, axs = plt.subplots(3, 1, figsize=(11, 8), sharex=True)
     axs[0].plot(t, x.sum(axis=0), color="0.3", lw=0.6)
     axs[0].set_ylabel("plain sum of channels (ADC)")
-    axs[1].plot(t, m, color="C0", lw=0.8)
-    axs[1].set_ylabel("m: median across channels (ADC)")
+    axs[1].plot(t, m, color="C0", lw=0.8, label="m: median across channels")
+    axs[1].plot(t, md, color="C3", lw=1.2, label="dead-channel mean, smoothed")
+    axs[1].set_ylabel("common mode (ADC)")
+    axs[1].legend(fontsize=8, loc="upper right")
     c0 = ev["channels"][0]
     axs[2].plot(t, x[0], color="0.6", lw=0.5, label=f"channel {c0}")
     axs[2].plot(t, r[0], color="C0", lw=0.5, label=f"channel {c0} minus m")
@@ -129,7 +135,7 @@ def step4(ev, st, out, args):
 def step5(ev, st, out, args):
     x, t, dt = ev["x"], ev["t"], ev["dt"]
     bwin, pwin0, cwin0 = out["bwin"], out["pwin0"], out["cwin0"]
-    estimates = {"median": out["m"], "interp": out["mt"], "none": np.zeros_like(out["m"])}
+    estimates = {"dead": out["md"], "interp": out["mt"], "median": out["m"], "none": np.zeros_like(out["m"])}
     print(f"step 5: y = x - estimate for every channel, S = sum of y, minus its median over the baseline window; "
           f"per estimate, rms of S in the control window and charge in W:")
     res = {}
@@ -359,7 +365,9 @@ def main():
     ap.add_argument("run", help="run name (128K_37V_th19) or path to a .h5 file")
     ap.add_argument("--data", default=str(DATA), help="directory of the run files")
     ap.add_argument("--events", default="0", help="range a-b or list a,b,c (0-based)")
-    ap.add_argument("--cm", default="interp", choices=CM_METHODS, help="common-mode estimate")
+    ap.add_argument("--cm", default="dead", choices=CM_METHODS, help="common-mode estimate")
+    ap.add_argument("--dead", default=DEAD, help="dead channels (common mode for --cm dead), comma list")
+    ap.add_argument("--cm-smooth", type=int, default=125, help="moving-average width of the dead-channel mean (samples)")
     ap.add_argument("--baseline", default="end", choices=("end", "pre"), help="baseline window of the sum")
     ap.add_argument("--baseline-window", type=int, default=250, help="length of the baseline window (samples)")
     ap.add_argument("--smooth", type=int, default=64, help="moving-average width of the pulse search (samples)")
@@ -372,6 +380,7 @@ def main():
     ap.add_argument("--dump", metavar="FILE", help="write the per-event quantities of steps 3-9 to a JSON file")
     args = ap.parse_args()
     args.window = tuple(float(v) for v in args.window.split(","))
+    args.dead = {int(v) for v in args.dead.split(",") if v.strip()}
     if len(args.window) != 2:
         sys.exit("--window needs two numbers: before,after in ns")
 
@@ -390,7 +399,7 @@ def main():
         ev["run"] = path.stem
         st = Stepper(args.save, path.stem, e, names=STEPS)
         out = {}
-        steps = [lambda: step1(ev, st), lambda: step2(ev, st, out)] + [
+        steps = [lambda: step1(ev, st), lambda: step2(ev, st, out, args)] + [
             (lambda f: (lambda: f(ev, st, out, args)))(f)
             for f in (step3, step4, step5, step6, step7, step8, step9, step10, step11, step12)]
         ans = "next"

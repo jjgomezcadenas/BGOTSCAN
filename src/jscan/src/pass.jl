@@ -7,7 +7,7 @@
 using Statistics
 using Dates
 
-export moving_average, common_mode, interpolate_cm, pulse_search, windows,
+export moving_average, common_mode, dead_cm, interpolate_cm, pulse_search, windows,
        channel_charges, matched_filter, spe_candidates, read_template,
        process_event, pass
 
@@ -48,6 +48,18 @@ end
 
 "Median across channels at each sample: x is (samples, channels)."
 common_mode(x::AbstractMatrix) = vec(median(x, dims = 2))
+
+"""
+    dead_cm(x, cols, nsm) -> Vector{Float64}
+
+Common mode from the dead channels: the mean over the columns `cols` of `x`
+(samples, channels), smoothed with a moving average of `nsm` samples. Zeros
+when `cols` is empty.
+"""
+function dead_cm(x::AbstractMatrix, cols::AbstractVector{<:Integer}, nsm::Integer)
+    isempty(cols) && return zeros(size(x, 1))
+    return moving_average(vec(mean(@view(x[:, cols]), dims = 2)), nsm)
+end
 
 """
     interpolate_cm(m, lo, hi, edge) -> (mt, L, R)
@@ -214,7 +226,8 @@ function process_event(w::AbstractMatrix, p)
     _, imax0, _, _ = pulse_search(S0, p.nsm)
     lo0, hi0, _, _, _ = windows(imax0, p.a, p.b, ns)
     # 3, 4. estimate, subtraction, sum, baseline
-    mt = p.cm == "interp" ? interpolate_cm(m, lo0, hi0, p.edge)[1] :
+    mt = p.cm == "dead" ? dead_cm(x, p.dead_cols, p.cm_smooth) :
+         p.cm == "interp" ? interpolate_cm(m, lo0, hi0, p.edge)[1] :
          p.cm == "median" ? m : zeros(ns)
     y = x .- mt
     S = vec(sum(y, dims = 2))
@@ -270,19 +283,23 @@ function thermometers(runpath::AbstractString, name::AbstractString)
 end
 
 """
-    pass(runpath, out; template, events=nothing, cm="interp", edge=32, nbase=250,
-         nsm=64, window=(1000.0, 4000.0), tail_us=10.0, nsig=4.5, block=200,
-         scale=4, verbose=true) -> out
+    pass(runpath, out; template, events=nothing, cm="dead", dead=DEAD, cm_smooth=125,
+         edge=32, nbase=250, nsm=64, window=(1000.0, 4000.0), tail_us=10.0, nsig=4.5,
+         block=200, scale=4, verbose=true) -> out
 
 Run the pass over `runpath` and write `out` (HDF5). `template` is the path of the
-SPE template CSV. `events` is a 1-based range or `nothing` for all.
+SPE template CSV. `events` is a 1-based range or `nothing` for all. `dead` is the
+list of digitizer channels used as the common mode for `cm = "dead"`.
 """
+const DEAD = [19, 20, 21, 22, 23, 25, 27, 33, 35, 41, 46, 47]     # chanstat_doc.tex, 2026-10-14
+
 function pass(runpath::AbstractString, out::AbstractString; template::AbstractString,
-              events = nothing, cm::AbstractString = "interp", edge::Integer = 32,
+              events = nothing, cm::AbstractString = "dead", dead::AbstractVector{<:Integer} = DEAD,
+              cm_smooth::Integer = 125, edge::Integer = 32,
               nbase::Integer = 250, nsm::Integer = 64, window = (1000.0, 4000.0),
               tail_us::Real = 10.0, nsig::Real = 4.5, block::Integer = 200,
               scale::Integer = 4, verbose::Bool = true)
-    cm in ("interp", "median", "none") || throw(ArgumentError("cm must be interp, median or none"))
+    cm in ("dead", "interp", "median", "none") || throw(ArgumentError("cm must be dead, interp, median or none"))
     T = read_template(template)
     run = openrun(runpath)
     try
@@ -290,9 +307,11 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
         checkbounds(Bool, 1:run.nev, ev) || throw(BoundsError(1:run.nev, ev))
         ns, nch, nev = run.nsamp, run.nch, length(ev)
         dt = run.tsample_ns
+        dead_cols = [k for (k, c) in enumerate(run.channels) if c in dead]
         p = (baselines = run.baselines, nbase = nbase, nsm = nsm,
              a = round(Int, window[1] / dt), b = round(Int, window[2] / dt),
-             cm = cm, edge = edge, dt = dt, t = time_axis(run), T = T,
+             cm = cm, edge = edge, dead_cols = dead_cols, cm_smooth = cm_smooth,
+             dt = dt, t = time_axis(run), T = T,
              ntail = round(Int, tail_us * 1000 / dt), nsig = nsig)
         # per-event arrays
         t_max = zeros(Float32, nev); Hs = zeros(Float32, nev); t_rise = zeros(Float32, nev)
@@ -367,6 +386,7 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
             dur = (run.timestamp_ns[end] - run.timestamp_ns[1]) * 1e-9
             A["trigger_rate_hz"] = dur > 0 ? mod(tid[end] - tid[1], 2^24) / dur : NaN
             A["cm"] = cm; A["edge"] = edge; A["baseline_window"] = nbase; A["smooth"] = nsm
+            A["dead"] = collect(Int, dead); A["cm_smooth"] = cm_smooth
             A["window_ns"] = collect(Float64, window); A["tail_us"] = Float64(tail_us); A["nsigma"] = Float64(nsig)
             A["template_file"] = abspath(template); A["template"] = T
             A["events_first"] = first(ev) - 1; A["events_last"] = last(ev) - 1

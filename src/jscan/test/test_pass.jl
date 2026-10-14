@@ -29,6 +29,22 @@ end
     @test common_mode(x) == [3.0, 2.0, 0.0]
 end
 
+@testset "dead_cm" begin
+    ns, nch = 400, 6
+    wander = 2.0 .* sin.(2π .* (1:ns) ./ 400)          # slow common mode
+    x = zeros(ns, nch)
+    for c in 1:nch
+        x[:, c] .= wander
+    end
+    x[150:160, 1] .+= 50.0                               # a pulse in a live channel
+    x[:, 5] .+= 0.3 .* randn(ns); x[:, 6] .+= 0.3 .* randn(ns)
+    cm = dead_cm(x, [5, 6], 25)
+    @test maximum(abs.(cm .- wander)) < 0.3              # follows the wander, not the pulse
+    @test dead_cm(x, Int[], 25) == zeros(ns)
+    S = vec(sum(x .- cm, dims = 2))
+    @test S[155] > 45 && abs(S[300]) < 2                 # the pulse survives, the wander is gone
+end
+
 @testset "interpolate_cm" begin
     m = collect(0.0:0.1:9.9)                    # 100 samples, slope 0.1
     mt, L, R = interpolate_cm(m, 41, 60, 4)

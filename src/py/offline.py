@@ -2,7 +2,8 @@
 """offline.py: the analysis of one run from the output of the pass: classes, charges, photopeaks, decay.
 
     python3 src/py/offline.py RUN|FILE [--window A,B] [--smooth 64] [--nsigma 5] [--k 3] [--gain FILE]
-            [--dead LIST] [--decay-range A,B] [--save NAME] [--out FILE]
+            [--dead LIST] [--decay-range A,B] [--decay-model 2]
+            [--veto 2] [--save NAME] [--out FILE]
 
 Reads pass/RUN_pass.h5 and the equalization table only. See docs/manual/offline_doc.tex.
 """
@@ -17,7 +18,7 @@ import matplotlib.pyplot as plt
 
 from bgo.io import PLOTS, REPO, find_pass
 from bgo.signal import smooth, rms, clipped_rms, pulse_search, windows
-from bgo.fit import fit_photopeak, peak_bg, fit_decay, decay
+from bgo.fit import fit_photopeak, peak_bg, fit_decay, decay, fit_decay2, decay2
 
 DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
 GAIN = REPO / "src" / "spe_gain_195K_41V_th20.csv"
@@ -56,7 +57,9 @@ def main():
     ap.add_argument("--k", type=float, default=3.0, help="zero-suppression threshold of Q_kept (sigma)")
     ap.add_argument("--gain", default=str(GAIN), help="equalization table (spefit.py)")
     ap.add_argument("--dead", default=DEAD, help="dead channels, comma list")
-    ap.add_argument("--decay-range", default="0.5,4", help="us after the maximum for the exponential fit")
+    ap.add_argument("--decay-range", default="0.5,8", help="us after the maximum for the decay fit")
+    ap.add_argument("--decay-model", type=int, default=2, choices=(1, 2), help="one or two exponentials")
+    ap.add_argument("--veto", type=float, default=2.0, help="us beyond the charge window where no second maximum is searched")
     ap.add_argument("--save", metavar="NAME", help="save figures as src/py/plots/NAME_*.png")
     ap.add_argument("--out", metavar="FILE", help="per-event output (default pass/RUN_offline.h5)")
     args = ap.parse_args()
@@ -80,6 +83,7 @@ def main():
     t = (np.arange(ns) - pre) * dt
     a_ns, b_ns = (float(v) for v in args.window.split(",")) if args.window else win_pass
     a, b = int(round(a_ns / dt)), int(round(b_ns / dt))
+    veto = int(round(args.veto * 1000 / dt))
     g_tab, a1 = read_gain(args.gain)
     q_pe = a1 * T.sum() * dt if np.isfinite(a1) else np.nan
 
@@ -93,7 +97,7 @@ def main():
         imax[e], H[e], irise[e] = im, h, -1 if ir is None else ir
         Q[e] = dt * S[pwin].sum(); Qc[e] = dt * S[cwin].sum()
         sN[e] = rms(Sh[cwin])
-        masked = Sh.copy(); masked[pwin] = -np.inf
+        masked = Sh.copy(); masked[max(0, pwin.start - veto):min(ns, pwin.stop + veto)] = -np.inf
         j = int(masked.argmax()); i2[e] = j; P2[e] = masked[j]
         lo, hi = sorted((im, j)); V[e] = Sh[lo:hi + 1].min()
     sigma_Q = clipped_rms(Qc)
@@ -132,7 +136,17 @@ def main():
     pulse = np.where(cnt > 0.5 * sel.sum(), acc / np.maximum(cnt, 1), np.nan)
     tp = (np.arange(ns) - centre) * dt
     ok = np.isfinite(pulse)
-    dec = fit_decay(tp[ok], pulse[ok], t0d, t1d)
+    dec = fit_decay2(tp[ok], pulse[ok], t0d, t1d) if args.decay_model == 2 else fit_decay(tp[ok], pulse[ok], t0d, t1d)
+    if args.decay_model == 2 and dec["ok"] and (not 0.05 < dec["f1"] < 0.95 or not np.isfinite(dec["err1"] + dec["err2"])
+                                               or dec["err2"] == 0):
+        dec = fit_decay(tp[ok], pulse[ok], t0d, t1d)             # one component carries all the light
+        args.decay_model = 1
+    if args.decay_model == 2 and dec["ok"]:
+        dec["tau"], dec["err"] = dec["tau2"], dec["err2"]          # the slow component is "the" decay time
+        dec_label = (f"tau1 {dec['tau1'] / 1000:.3f} +- {dec['err1'] / 1000:.3f} us ({100 * dec['f1']:.0f}% of the light), "
+                     f"tau2 {dec['tau2'] / 1000:.3f} +- {dec['err2'] / 1000:.3f} us")
+    elif dec["ok"]:
+        dec_label = f"tau {dec['tau'] / 1000:.3f} +- {dec['err'] / 1000:.3f} us"
 
     # ---- text ------------------------------------------------------------------------------
     T3 = float(A["T3"]) if "T3" in A else np.nan
@@ -148,8 +162,9 @@ def main():
                   f"{fi['s']:8.0f} {100 * fi['fwhm_rel']:8.1f}% {fi['n']:6d}")
         else:
             print(f"  {n:10s} no fit ({fi['why']})")
-    print(f"  decay: tau {dec['tau'] / 1000:.3f} +- {dec['err'] / 1000:.3f} us over [{t0d / 1000:g}, {t1d / 1000:g}] us after the maximum"
+    print(f"  decay ({args.decay_model} exp.): {dec_label} over [{t0d / 1000:g}, {t1d / 1000:g}] us after the maximum"
           if dec["ok"] else f"  decay: no fit ({dec['why']})")
+    print(f"  pile-up: second maximum searched outside the window extended by {args.veto:g} us on each side")
     if no_g:
         print(f"  live channels without equalization factor (g = 1): {no_g}")
 
@@ -173,6 +188,10 @@ def main():
                    sigma_Q=float(sigma_Q), q_pe=float(q_pe), A1=float(a1), classes=frac, pileup_frac=pile_frac,
                    n_used=int(sel.sum()), decay_us=dec["tau"] / 1000 if dec["ok"] else None,
                    decay_err_us=dec["err"] / 1000 if dec["ok"] else None, decay_range_us=[t0d / 1000, t1d / 1000],
+                   decay_model=args.decay_model, veto_us=args.veto,
+                   decay_fast_us=dec.get("tau1", np.nan) / 1000 if dec["ok"] and args.decay_model == 2 else None,
+                   decay_fast_err_us=dec.get("err1", np.nan) / 1000 if dec["ok"] and args.decay_model == 2 else None,
+                   decay_fast_fraction=dec.get("f1") if dec["ok"] and args.decay_model == 2 else None,
                    no_gain=no_g,
                    estimators={n: dict(mu=fi["mu"], err=fi["err"], s=fi["s"], fwhm_rel=fi["fwhm_rel"], n=fi["n"], ok=fi["ok"])
                                for n, fi in fits.items()})
@@ -213,8 +232,9 @@ def main():
         ax.plot(tp[ok] / 1000, pulse[ok], color="C0", lw=0.8, label=f"mean of {sel.sum()} REAL events")
         if dec["ok"]:
             s2 = dec["sel"]
-            ax.plot(tp[ok][s2] / 1000, decay(tp[ok][s2] - t0d, dec["A"], dec["tau"], dec["C"]), color="C3", lw=1.5,
-                    label=f"tau {dec['tau'] / 1000:.3f} +- {dec['err'] / 1000:.3f} us")
+            model = (decay2(tp[ok][s2] - t0d, dec["A1"], dec["tau1"], dec["A2"], dec["tau2"], dec["C"]) if args.decay_model == 2
+                     else decay(tp[ok][s2] - t0d, dec["A"], dec["tau"], dec["C"]))
+            ax.plot(tp[ok][s2] / 1000, model, color="C3", lw=1.5, label=dec_label)
         ax.set(xlabel="us from the maximum", ylabel="sum (ADC)", yscale=yscale)
         if yscale == "log":
             ax.set_ylim(max(1.0, np.nanmin(pulse[ok][pulse[ok] > 0]) if (pulse[ok] > 0).any() else 1.0), None)
@@ -226,6 +246,7 @@ def main():
     if pile.any():
         ax.hist(dt_pile[pile] / 1000, bins=60, color="C0", alpha=0.7)
     ax.axvspan(-a_ns / 1000, b_ns / 1000, color="0.5", alpha=0.15, lw=0, label="charge window")
+    ax.axvspan(-a_ns / 1000 - args.veto, b_ns / 1000 + args.veto, color="0.5", alpha=0.08, lw=0, label=f"veto {args.veto:g} us")
     ax.set(xlabel="time of the second maximum minus t_max (us)", ylabel="events", title=f"{run}: pile-up, {int(pile.sum())} events")
     ax.title.set_fontsize(10); ax.grid(lw=0.3); ax.legend(fontsize=8)
     fig.tight_layout(); figs["pileup"] = fig

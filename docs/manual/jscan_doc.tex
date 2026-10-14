@@ -275,7 +275,9 @@ option & default & meaning \\
 \code{--out DIR} & \code{pass/} (repository, not in git) & output directory; the file is \code{DIR/RUN\_pass.h5} \\
 \code{--events a:b} & all & range of events, 1-based \\
 \code{--template FILE} & \code{src/spe\_template\_RUN.csv} & SPE pulse shape (\code{template.py}); required \\
-\code{--cm M} & \code{interp} & common-mode estimate: \code{interp}, \code{median}, \code{none} \\
+\code{--cm M} & \code{dead} & common-mode estimate: \code{dead}, \code{interp}, \code{median}, \code{none} (\code{selection\_doc.tex}, step~5) \\
+\code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & channels whose mean is the common mode for \code{dead} \\
+\code{--cm-smooth N} & 125 & moving-average width of that mean, in samples \\
 \code{--edge E} & 32 & samples averaged at each end of $W$ for the interpolation \\
 \code{--baseline-window N} & 250 & last $N$ samples: baseline of the sum \\
 \code{--smooth N} & 64 & moving-average width of the pulse search \\
@@ -299,10 +301,12 @@ block of events the raw array is (samples, channels, events).
   moving average of width $N_{\rm sm}$ (edges use the samples available);
   $i^0_{\max}$ its maximum; $W = [i^0_{\max} - a, i^0_{\max} + b]$ clipped
   to the record.
-\item $\tilde m$: $m$ outside $W$, a straight line inside between the means
-  of $m$ over the $E$ samples before and after $W$ (one end replaces the
-  other when $W$ touches the record edge). With \code{median}, $\tilde m =
-  m$; with \code{none}, $\tilde m = 0$.
+\item $\tilde m$: with \code{dead}, the mean of $x_{c,i}$ over the dead
+  channels, smoothed with a moving average of $N_{\rm cm}$ samples (no
+  window involved); with \code{interp}, $m$ outside $W$ and a straight line
+  inside between the means of $m$ over the $E$ samples before and after
+  $W$ (one end replaces the other when $W$ touches the record edge); with
+  \code{median}, $\tilde m = m$; with \code{none}, $\tilde m = 0$.
 \item $y_{c,i} = x_{c,i} - \tilde m_i$; $S_i = \sum_c y_{c,i}$; $B$ =
   median of $S$ over the last $N$ samples; $S \leftarrow S - B$; $\sigma_1$
   = rms of $S$ there.

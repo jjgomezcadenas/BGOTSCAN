@@ -58,7 +58,9 @@ option & default & meaning \\
 \midrule
 \code{--data DIR} & the data directory & as in \code{wfview.py} \\
 \code{--events SPEC} & \code{0} & events to process: \code{a-b} or \code{a,b,c}, 0-based \\
-\code{--cm METHOD} & \code{interp} & common-mode estimate used in step~5: \code{interp}, \code{median}, \code{none} \\
+\code{--cm METHOD} & \code{dead} & common-mode estimate used in step~5: \code{dead}, \code{interp}, \code{median}, \code{none} \\
+\code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & channels without signal, whose mean is the common mode for \code{dead} \\
+\code{--cm-smooth N} & 125 & moving-average width of the dead-channel mean, in samples (1~\us) \\
 \code{--edge E} & 32 & samples averaged at each end of $W$ for the line of step~4 \\
 \code{--baseline W} & \code{end} & baseline window of the sum: \code{end} of the record or \code{pre}-trigger \\
 \code{--baseline-window N} & 250 & length of that window in samples (capped at the pre-trigger length for \code{pre}) \\
@@ -165,12 +167,47 @@ regions shaded.
 \subsection{Step 5: subtract and sum}
 
 The corrected channel is $y_{c,i} = x_{c,i} - \tilde m_i$ and the summed
-waveform $S_i = \sum_c y_{c,i}$. For comparison the same is done with
-$\tilde m = m$ (\code{median}: no protection of the pulse) and $\tilde m =
-0$ (\code{none}); not with the mean, which makes the sum identically
-zero.
+waveform $S_i = \sum_c y_{c,i}$, with $\tilde m$ one of four estimates:
+\begin{itemize}
+\item \code{dead} (the default since 2026-10-14): the mean over the dead
+  channels $D$ (\code{--dead}; \code{chanstat\_doc.tex}) of $x_{c,i}$,
+  smoothed with a moving average of $N_{\rm cm}$ samples
+  (\code{--cm-smooth}, 125 samples, 1~\us):
+  \[
+    \tilde m_i = \Big\langle \tfrac{1}{|D|} \sum_{c \in D} x_{c,i} \Big\rangle_{N_{\rm cm}}.
+  \]
+  The dead channels carry the common mode and nothing else, in every
+  event and at every sample, so the estimate needs no assumption about
+  where the signal is. The mean of twelve channels has $3.9/\sqrt{12} =
+  1.1$ counts of white noise per sample; the common mode is slow, and the
+  moving average over 1~\us brings that to 0.1 counts, 5 counts in the sum
+  of the 52 live channels, against 31 of white noise there. Two
+  remarks from the events. The dead channels do not see the wander that
+  the sum of the live channels has at the microsecond scale (about 13
+  counts rms over 5~\us), which therefore comes with the SiPM bias; the
+  live channels without light in the event were tried as the monitor
+  instead, and fail, because in a 511~keV event almost every channel
+  carries some light and their mean removes a third of the charge. And
+  the control-window rms of 23 counts that \code{interp} and
+  \code{median} show against 33 to 42 for the others is not noise
+  removed: subtracting the per-sample median, a noisy estimate correlated
+  with the sum of the same channels, cancels a quarter of the white noise
+  statistically, the amount the arithmetic of 64 Gaussian channels
+  predicts, while eating signal.
+\item \code{interp}: $m$ outside $W$ and the line of step~4 inside. This
+  was the default until the average pulse of a run showed its defect: the
+  median outside $W$ is not free of signal, the pulse tail continues
+  beyond the window in many channels and leaks into the median, so the
+  tail is partly removed beyond $W$ (a kink in the average pulse at the
+  end of the window) and the right end of the line is pulled up, which
+  removes a growing fraction of the signal along the window. The amount
+  depends on the tail of each event. Kept for comparison.
+\item \code{median}: $\tilde m = m$, no protection of the pulse.
+\item \code{none}: $\tilde m = 0$. Not the mean across channels, which
+  makes the sum identically zero.
+\end{itemize}
 
-Text: for each of the three estimates, the rms of $S$ in the control
+Text: for each of the four estimates, the rms of $S$ in the control
 window of step~8 and the charge in $W$, side by side, so that the loss of
 signal and the gain in noise can be compared; the estimate chosen with
 \code{--cm} is used from here on. Figure: $S$ with \code{none} and with

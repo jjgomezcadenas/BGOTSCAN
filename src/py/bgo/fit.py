@@ -117,6 +117,39 @@ def decay(t, A, tau, C):
     return A * np.exp(-t / tau) + C
 
 
+def decay2(t, A1, tau1, A2, tau2, C):
+    return A1 * np.exp(-t / tau1) + A2 * np.exp(-t / tau2) + C
+
+
+def fit_decay2(t, y, t0, t1):
+    """Two exponentials A1 exp(-t/tau1) + A2 exp(-t/tau2) + C fitted to y(t) for t0 <= t <= t1,
+    tau1 < tau2. Returns dict(tau1, err1, tau2, err2, A1, A2, C, f1, ok, why, sel), with f1 the
+    fraction of the light (area) in the fast component."""
+    sel = (t >= t0) & (t <= t1)
+    out = dict(tau1=np.nan, err1=np.nan, tau2=np.nan, err2=np.nan, A1=np.nan, A2=np.nan, C=np.nan,
+               f1=np.nan, ok=False, why="", sel=sel)
+    if sel.sum() < 20:
+        out["why"] = "fewer than 20 samples in the range"
+        return out
+    tt, yy = t[sel] - t0, y[sel]
+    span = t1 - t0
+    try:
+        p, cov = curve_fit(decay2, tt, yy, p0=(0.5 * max(yy[0], 1.0), 0.1 * span, 0.5 * max(yy[0], 1.0), 0.5 * span, 0.0),
+                           bounds=([0, 1e-3 * span, 0, 1e-3 * span, -np.inf], [np.inf, 10 * span, np.inf, 100 * span, np.inf]),
+                           maxfev=50000)
+    except RuntimeError:
+        out["why"] = "fit did not converge"
+        return out
+    A1, tau1, A2, tau2, C = p
+    e1, e2 = np.sqrt(cov[1, 1]), np.sqrt(cov[3, 3])
+    if tau1 > tau2:
+        A1, tau1, A2, tau2, e1, e2 = A2, tau2, A1, tau1, e2, e1
+    area1, area2 = A1 * tau1, A2 * tau2
+    out.update(tau1=float(tau1), err1=float(e1), tau2=float(tau2), err2=float(e2), A1=float(A1), A2=float(A2),
+               C=float(C), f1=float(area1 / (area1 + area2)) if area1 + area2 > 0 else np.nan, ok=True)
+    return out
+
+
 def fit_decay(t, y, t0, t1):
     """Single exponential A exp(-t/tau) + C fitted to y(t) for t0 <= t <= t1 (same units as t).
     Returns dict(tau, err, A, C, ok, why, sel)."""

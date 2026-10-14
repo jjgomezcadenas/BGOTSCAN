@@ -55,7 +55,9 @@ option & default & meaning \\
 \code{--k k} & 3 & zero-suppression threshold of $Q_{\rm kept}$ \\
 \code{--gain FILE} & \code{src/spe\_gain\_195K\_41V\_th20.csv} & equalization table of \code{spefit.py}; channels without a factor get 1 and are listed \\
 \code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & channels excluded from every per-channel charge \\
-\code{--decay-range A,B} & \code{0.5,4} & \us{} after the maximum over which the exponential is fitted to the average pulse; set per temperature \\
+\code{--decay-range A,B} & \code{0.5,8} & \us{} after the maximum over which the decay is fitted to the average pulse; set per temperature \\
+\code{--decay-model N} & 2 & one or two exponentials in the decay fit \\
+\code{--veto V} & 2 & \us{} beyond each edge of the charge window where no second maximum is searched (pile-up) \\
 \code{--save NAME} & off & figures saved as \code{src/py/plots/NAME\_classes.png}, \code{NAME\_spectra.png}, \code{NAME\_pulse.png}, \code{NAME\_pileup.png}; otherwise shown \\
 \code{--out FILE} & \code{pass/RUN\_offline.h5} & per-event table; the summary goes next to it as \code{RUN\_offline.json} \\
 \bottomrule
@@ -70,7 +72,25 @@ $a$, $b$ the window in samples from \code{--window}.
 \paragraph{Pulse and class.} $\hat S$ = moving average of $S$ over $N$
 samples; $i_{\max}$, $H$, $i_{\rm rise}$ as in \code{selection\_doc.tex}
 step~7. Charge window $[i_{\max} - a, i_{\max} + b]$ and control window
-of the same length in the pulse-free part (step~8); $Q = \Delta t \sum_{\rm
+of the same length in the pulse-free part (step~8). The baseline of the sum is the
+end-of-record baseline of the pass. A local baseline was tried (the
+median of a post-pulse region 8 to 10~\us after the maximum, and a line
+from a pre-trigger level to it) and does not help: the sum wanders by
+about 13 counts rms over the 5~\us of the charge window itself, so a
+baseline next to the pulse leaves as much wander in the charge as one far
+from it; and the samples just before the window cannot be used at all,
+they hold the trigger-time excursion. The charge noise of the sum,
+$\sigma_Q$, is 12\% of the 511~keV peak for this reason, and $Q$ of the
+sum is not the estimator to use for the resolution; the per-channel
+estimators that sum only the channels with light carry a tenth of that
+noise. The reason: every channel has a
+slow wander of about 0.7 counts rms at the microsecond scale, only a tenth
+of it common to the channels (\code{chanstat.py}), so no common-mode
+estimate removes it, and the end-of-record baseline of the pass, 20~\us
+away, leaves it in the charge: the charge noise of the sum was then 12\%
+of the 511~keV peak. A baseline next to the pulse removes everything slower
+than a few microseconds. The samples just before the charge window cannot
+be used: they hold the trigger-time excursion. $Q = \Delta t \sum_{\rm
 window} S_i$, $Q_{\rm ctrl}$ the same over the control window. The charge
 noise is measured on the run: $\sigma_Q$ = rms of $Q_{\rm ctrl}$ over all
 events (clipped at three times a first rms, so that pulses in the control
@@ -78,9 +98,13 @@ window do not inflate it); this replaces the white-noise formula of the
 prototype. $\sigma_N$ = rms of $\hat S$ over the control window, per event.
 Class: EMPTY if $Q < K\sigma_Q$; REAL if $Q \ge K\sigma_Q$ and a rising
 edge; TAIL if $Q \ge K\sigma_Q$ and no rising edge. Pile-up: the maximum
-$P_2$ of $\hat S$ outside the charge window, the valley $V$ between it and
-$i_{\max}$; flagged if $P_2 > K\sigma_N$ and $P_2 - V > K\sigma_N$
-(step~10); $\Delta t_{\rm pile}$ = time of $P_2$ minus $t_{\max}$.
+$P_2$ of $\hat S$ outside the charge window extended by the veto
+(\code{--veto}) on each side, the valley $V$ between it and $i_{\max}$;
+flagged if $P_2 > K\sigma_N$ and $P_2 - V > K\sigma_N$ (step~10); $\Delta
+t_{\rm pile}$ = time of $P_2$ minus $t_{\max}$. The veto was added after
+the first run: without it the slow tail and the rise of the main pulse,
+just outside the window, were flagged as second maxima and piled up at the
+window edges in the $\Delta t_{\rm pile}$ histogram.
 
 \paragraph{Charges from the channels.} $q_c$ and $q_c^{\rm ctrl}$ are the
 stored per-channel charges in the window of the pass. The charge noise of
@@ -129,10 +153,19 @@ the $Q$ spectrum of each class.
 
 \paragraph{Average pulse and decay time.} The mean of $S$ over the REAL
 events without pile-up, each shifted so that its $i_{\max}$ falls on a
-common sample, over the samples all of them cover. A single exponential
-$A e^{-t/\tau} + C$ is fitted between $t_{\max} + A$ and $t_{\max} + B$
-(\code{--decay-range}); $\tau$ is the decay time of the run. Figure
-\code{pulse}: the average pulse and the fit, linear and logarithmic.
+common sample, over the samples all of them cover. The decay is fitted
+between $t_{\max} + A$ and $t_{\max} + B$ (\code{--decay-range}) with two
+exponentials, $A_1 e^{-t/\tau_1} + A_2 e^{-t/\tau_2} + C$, $\tau_1 <
+\tau_2$ (\code{--decay-model 2}, the default: the average pulse is not a
+single exponential, it decays fast first and slowly after), or with one
+(\code{--decay-model 1}). The fraction of the light in the fast component
+is $f_1 = A_1 \tau_1 / (A_1 \tau_1 + A_2 \tau_2)$. When one component
+carries more than 95\% of the light or the second has no error, the two
+exponentials are degenerate and the single-exponential fit is reported
+instead, with \code{decay\_model} = 1 in the summary. The decay time of the
+run reported to \code{scan.py} is $\tau_2$, the slow component, with
+$\tau_1$ and $f_1$ beside it. Figure \code{pulse}: the average pulse and
+the fit, linear and logarithmic.
 
 \section{Output}
 

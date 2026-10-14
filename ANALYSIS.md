@@ -256,6 +256,41 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
 - Dark rate per live channel at 196 K: 12 kHz at 41 V, 1 kHz at 39 V
   (threshold effect and dark-count dependence together).
 
+### Common mode, baseline and the noise of the sum (2026-10-14, evening)
+
+- The interpolated common mode (median across channels outside the
+  charge window, a line inside) distorted the pulse: the median outside
+  the window contains the pulse tail, the tail was partly removed beyond
+  the window (a kink in the average pulse at +4 us) and the line pulled
+  the sum down along the window. It removed 20% of the charge. Replaced
+  by the mean of the twelve dead channels, smoothed over 1 us, as the
+  default of selection.py and of the pass: the average pulse is then a
+  clean single exponential, 2.74 +- 0.01 us at 196 K, and the photopeak
+  rose by 25%.
+- The dead channels remove only what they share with the live ones. The
+  sum of the live channels wanders by about 13 counts rms over 5 us,
+  which the dead channels do not see (a wander that comes with the bias);
+  the live channels without light cannot serve as monitor either (almost
+  every channel carries some light in a 511 keV event). A local baseline
+  for the sum does not help, the wander is on the scale of the window.
+  Consequence: the charge of the sum has a noise of 66 000 ADC ns, 12% of
+  the 511 keV peak, and is not the estimator for the resolution; the
+  per-channel estimators that sum only the channels with light carry a
+  tenth of that noise. The 23 counts rms that the median subtraction
+  showed was a statistical artefact (a noisy estimate correlated with the
+  sum), not a common mode removed.
+- First resolution numbers (195K_41V_th20, REAL without pile-up): the
+  511 keV photopeak in every estimator, the 1275 keV line at 2.5 times it;
+  FWHM 41 to 53% with the dead-channel pass, 27 to 46% with the interp
+  pass (whose line also removed the wander per channel). Far wider than
+  the crystal should give: the dead block (19% of the face) and the
+  position dependence are the suspects; the clustering and the position
+  selection are next.
+- Pile-up: a valley criterion alone flags the rise and the tail of the
+  main pulse just outside the window; a veto of 2 us beyond the window
+  removes most of it. Genuine random pile-up: about 9% of the events in
+  24 us, a real event rate near 4 kHz.
+
 ### Consequences for the light yield
 
 - Light yield versus temperature needs a gain and PDE correction, because

@@ -104,6 +104,7 @@ name & meaning \\
 \code{find\_photopeak(h, c, frac=0.25)} & rightmost local maximum of the smoothed histogram above \code{frac} of its maximum (offline, spectra) \\
 \code{fit\_photopeak(values, nbins=200)} & histogram up to the 99.5th percentile, photopeak located and fitted twice with \code{peak\_bg} over $\mu \pm 2.5 s$; returns \code{mu, err, s, fwhm\_rel, n, ok, why, h, edges, lo, hi, p} \\
 \code{decay(t, A, tau, C)}, \code{fit\_decay(t, y, t0, t1)} & single exponential fitted to \code{y(t)} between \code{t0} and \code{t1}; returns \code{tau, err, A, C, ok, why, sel} \\
+\code{decay2(...)}, \code{fit\_decay2(t, y, t0, t1)} & two exponentials, $\tau_1 < \tau_2$; returns \code{tau1, err1, tau2, err2, A1, A2, C, f1} (light fraction of the fast one), \code{ok, why, sel} \\
 \bottomrule
 \end{longtable}
 
