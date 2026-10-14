@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import csv
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -341,6 +342,7 @@ def main():
     ap.add_argument("--save", metavar="NAME", help="no prompts; save figures as src/py/plots/NAME_evE_sN.png")
     ap.add_argument("--summary", action="store_true", help="only the final step 6, after the last event")
     ap.add_argument("--csv", metavar="FILE", help="write the per-channel table of step 6")
+    ap.add_argument("--dump", metavar="FILE", help="write the candidates of every channel per event to JSON")
     args = ap.parse_args()
 
     path = find_run(args.run, Path(args.data))
@@ -365,6 +367,7 @@ def main():
            "sy": {int(c): [] for c in channels}, "events": 0}
 
     ans = "next"
+    dump = []
     for e in events:
         w = wf[e].astype(np.float64)
         ev = dict(run=path.stem, e=e, w=w, t=t, dt=dt, channels=channels, T=T, tpath=tpath)
@@ -387,10 +390,18 @@ def main():
             if ans != "next":
                 break
         st.close()
+        if args.dump and "per" in out:
+            dump.append(dict(event=e, channels={str(c): [dict(time=float(t[i]), A=float(y[i])) for i in cands]
+                                                for c, (y, sy, thr, cands) in out["per"].items()},
+                             sigma={str(c): float(v[1]) for c, v in out["per"].items()}))
         if ans == "quit":
             break
         if not args.summary:
             print()
+    if args.dump:
+        with open(args.dump, "w") as fo:
+            json.dump(dump, fo)
+        print(f"dump written to {args.dump} ({len(dump)} events)")
     if args.summary and args.save:
         src = PLOTS / f"{args.save}_ev{events[-1]}_s6.png"
         if src.exists():

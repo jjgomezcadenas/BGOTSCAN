@@ -22,12 +22,14 @@
 
 \section{Purpose}
 
-\code{JScan} is the Julia side of the BGOTSCAN analysis: it will hold the
-passes over the full data set (baseline tracking, filtering, per-event
-features). This document covers what exists so far, the reader: opening a run,
-getting its parameters, reading blocks of waveforms. It also records the
-layout of the files written by the acquisition, which both the Julia and the
-Python code rely on.
+\code{JScan} is the Julia side of the BGOTSCAN analysis: the passes over the
+full data set. This document covers the reader (opening a run, getting its
+parameters, reading blocks of waveforms), the layout of the files written by
+the acquisition, which both the Julia and the Python code rely on, and the
+pass (section~\ref{sec:pass}): one read of a run that writes, per event, the
+corrected summed waveform, the charge of every channel, and the
+single-photoelectron candidates of every channel, for the offline analysis in
+Python.
 
 \section{The run files}
 
@@ -238,7 +240,157 @@ Returns a \code{Vector{Float64}} of length \code{nsamp} with the time of each
 sample in ns from the trigger: $t_i = (i - 1 - \code{pretrigger})\,
 \code{tsample\_ns}$, so \code{t[pretrigger + 1] == 0}.
 
-\section{Tests}
+\section{The pass}
+\label{sec:pass}
+
+\subsection{Purpose}
+
+One pass over a run does everything that needs the raw per-channel
+waveforms, so that they are never read again: the common-mode and baseline
+correction and the summed waveform (\code{selection\_doc.tex}, steps 1 to
+7), the charge and the time of the maximum of every channel in the
+scintillation window (step~9, before any threshold), and the
+single-photoelectron candidates of every channel in the pulse-free region
+(\code{spe\_doc.tex}, steps 1 to 3). Everything else (classes, pile-up, zero
+suppression, clusters, SPE spectra, equalization, light yield, decay time)
+is computed offline in Python from the output, which is under 100~MB per
+run. The definitions are those of the two documents cited; this section
+gives the Julia conventions, the parameters, the output layout and the
+tests.
+
+\subsection{Usage}
+
+\begin{lstlisting}
+julia --project=src/jscan src/jscan/pass.jl RUN [options]
+\end{lstlisting}
+
+\code{RUN} is a run name or a path. Options, with the defaults of the
+Python prototypes:
+
+\begin{center}
+\begin{tabular}{l l p{70mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{--out DIR} & \code{pass/} (repository, not in git) & output directory; the file is \code{DIR/RUN\_pass.h5} \\
+\code{--events a:b} & all & range of events, 1-based \\
+\code{--template FILE} & \code{src/spe\_template\_RUN.csv} & SPE pulse shape (\code{template.py}); required \\
+\code{--cm M} & \code{interp} & common-mode estimate: \code{interp}, \code{median}, \code{none} \\
+\code{--edge E} & 32 & samples averaged at each end of $W$ for the interpolation \\
+\code{--baseline-window N} & 250 & last $N$ samples: baseline of the sum \\
+\code{--smooth N} & 64 & moving-average width of the pulse search \\
+\code{--window A,B} & \code{1000,4000} & charge window, ns before and after the maximum \\
+\code{--tail T} & 10 & SPE search region: last $T$ \us{} of the record \\
+\code{--nsigma K} & 4.5 & SPE threshold in units of the filtered noise \\
+\code{--block N} & 200 & events read per block \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Per event}
+
+Indices are 1-based; the trigger is at sample \code{pretrigger + 1}. For a
+block of events the raw array is (samples, channels, events).
+
+\begin{enumerate}
+\item $x_{c,i} = w_{c,i} - b_c$ with $b_c$ the WebDump baseline (attribute).
+\item $m_i = \operatorname{median}_c x_{c,i}$; provisional sum $S^0_i =
+  \sum_c (x_{c,i} - m_i)$ minus its median over the last $N$ samples;
+  moving average of width $N_{\rm sm}$ (edges use the samples available);
+  $i^0_{\max}$ its maximum; $W = [i^0_{\max} - a, i^0_{\max} + b]$ clipped
+  to the record.
+\item $\tilde m$: $m$ outside $W$, a straight line inside between the means
+  of $m$ over the $E$ samples before and after $W$ (one end replaces the
+  other when $W$ touches the record edge). With \code{median}, $\tilde m =
+  m$; with \code{none}, $\tilde m = 0$.
+\item $y_{c,i} = x_{c,i} - \tilde m_i$; $S_i = \sum_c y_{c,i}$; $B$ =
+  median of $S$ over the last $N$ samples; $S \leftarrow S - B$; $\sigma_1$
+  = rms of $S$ there.
+\item $\hat S$ = moving average of $S$; $i_{\max}$, $H = \hat S_{i_{\max}}$;
+  $t_{\rm rise}$ = last sample before $i_{\max}$ with $\hat S < H/2$ (0 if
+  none); charge window $[i_{\max} - a, i_{\max} + b]$ clipped, $n$ samples;
+  control window as in \code{selection\_doc.tex} step~8.
+\item Per channel: $B_c$ = median of $y_c$ over the last $N$ samples; $q_c
+  = \Delta t \sum_{\rm window} (y_{c,i} - B_c)$; $q_c^{\rm ctrl}$ the same
+  over the control window; $t_c$ = time of the maximum of the moving
+  average (width $N_{\rm sm}$) of $y_c - B_c$ inside the window.
+\item SPE, per channel, on $x_c$ minus its own median over the record: the
+  matched filter $z_i = \sum_j T_j x_{c,i+j} / \sum_j T_j^2$ in the search
+  region $R$ (last $T$ \us{}, $H$ samples trimmed at both ends, $H$ the
+  template half length); $\sigma_z$ the clipped rms of $z$ over $R$
+  (samples beyond three times a first rms removed); candidates the local
+  maxima of $z$ above $K\sigma_z$, taken in decreasing order, at least
+  $2H$ apart; for each, the time, $A = z_i$, and the residual rms of
+  $x_{c,i+j} - A\,T_j$ over the window.
+\end{enumerate}
+
+\subsection{Output}
+
+One HDF5 file per run, deflate level 4, shapes as seen from Julia (h5py
+sees the axes reversed).
+
+\begin{center}
+\begin{tabular}{l l l p{62mm}}
+\toprule
+dataset & shape & type & content \\
+\midrule
+\code{events/index} & (nev,) & Int32 & event index, 0-based as in the run file \\
+\code{events/trigger\_id}, \code{events/timestamp\_ns} & (nev,) & Int64, Float64 & copied from the run \\
+\code{events/t\_max}, \code{events/H}, \code{events/t\_rise} & (nev,) & Float32 & ns from the trigger; height in ADC \\
+\code{events/win\_lo}, \code{events/win\_hi} & (nev,) & Int32 & charge window, 0-based sample indices, inclusive \\
+\code{events/ctrl\_lo}, \code{events/ctrl\_hi} & (nev,) & Int32 & control window \\
+\code{events/baseline}, \code{events/rms} & (nev,) & Float32 & $B$ and $\sigma_1$ of the sum \\
+\code{sum} & (nsamp, nev) & Int16 & $4\,S_i$ rounded (attribute \code{scale} = 4; values beyond $\pm 8191$ clipped and counted in the attribute \code{clipped}) \\
+\code{qc}, \code{qc\_ctrl} & (nch, nev) & Float32 & $q_c$, $q_c^{\rm ctrl}$ in ADC\,ns, all channels, no threshold \\
+\code{tc} & (nch, nev) & Float32 & $t_c$ in ns from the trigger \\
+\code{spe/event}, \code{spe/channel} & (ncand,) & Int32, Int16 & one row per candidate \\
+\code{spe/time}, \code{spe/A}, \code{spe/residual} & (ncand,) & Float32 & ns from the trigger, ADC, ADC \\
+\code{spe\_sigma} & (nch, nev) & Float32 & $\sigma_z$ per channel and event \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Root attributes: the run name, path, T, bias, threshold, the run
+attributes copied (\code{start\_time}, \code{pretrigger}, \code{tsample\_ns},
+\code{baselines}), the thermometers T1, T2, T3 from \code{temperatures.txt}
+when present, the true trigger rate from the trigger counter, every option
+above, the template file and its values, the channel map file, the JScan
+version, the git commit of the repository if available, and the date.
+Equalization is not applied and dead channels are not masked: both are
+offline decisions, and the per-channel charges are stored for all 64.
+
+\subsection{Code}
+
+\code{src/jscan/src/pass.jl}, included in the module: the pure functions
+\code{common\_mode}, \code{interpolate\_cm}, \code{moving\_average},
+\code{pulse\_search}, \code{windows}, \code{channel\_charges},
+\code{matched\_filter}, \code{spe\_candidates}, one event's worth in
+\code{process\_event}, and \code{pass(run, out; kwargs...)} which reads by
+blocks and writes. \code{src/jscan/pass.jl} is the command-line script.
+
+\subsection{Tests}
+
+Two kinds. Unit tests of the pure functions on synthetic arrays: the
+median of a known matrix; the interpolation with and without a record
+edge; the moving average against a direct sum; a pulse placed at a known
+sample found by \code{pulse\_search} with its rising edge; the windows at
+the start, middle and end of a record; a template placed in zero noise
+recovered by \code{matched\_filter} with amplitude one and residual zero;
+candidates with the isolation rule.
+
+An end-to-end test against the Python prototypes: a second fixture,
+\code{test/data/real/197K\_39V\_th20.h5} (the run name, so that the reader parses it), holds three real events of
+\code{197K\_39V\_th20} (events 0, 1 and 18: two REAL, one with pile-up),
+cut by \code{test/make\_fixture\_real.py} with the full attributes of the
+run; \code{selection.py --dump} and \code{spe.py --dump} write their
+per-event quantities for the same file to JSON; the test runs \code{pass}
+on the fixture and compares $t_{\max}$, $H$, $B$, $\sigma_1$, the window
+bounds, $q_c$ for the 64 channels and the SPE candidates (count, times,
+amplitudes) to the dump, to $10^{-3}$ relative for the floats and exactly
+for the indices. Reading the real run \code{128K\_37V\_th19} for a few
+events is kept as the integration test, skipped without the data symlink.
+
+\section{Tests of the reader}
 
 \code{src/jscan/test/runtests.jl}, run with \code{Pkg.test()}. They use a
 fixture, \code{test/data/185K\_39d5V\_th19.h5}, with the layout of a real run

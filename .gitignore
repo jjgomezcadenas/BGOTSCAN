@@ -2,6 +2,7 @@
 2026_10_02_bgo_cryo_tempscan
 *.h5
 !src/jscan/test/data/*.h5
+!src/jscan/test/data/real/*.h5
 
 # local instructions
 CLAUDE.md

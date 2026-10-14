@@ -68,6 +68,7 @@ option & default & meaning \\
 \code{--zs k} & 3 & zero-suppression threshold of step~12, in units of the per-channel charge noise; can be changed at the prompt of that step \\
 \code{--from-step N} & 1 & start at this step (earlier steps are computed silently) \\
 \code{--save NAME} & off & no prompts; figures saved as \code{src/py/plots/NAME\_evE\_sN.png} \\
+\code{--dump FILE} & off & write per event $t_{\max}$, $H$, $B$, $\sigma_1$, the charge and control windows, the 64 charges $q_c$ and the sum $S$ to a JSON file (reference for the tests of the Julia pass) \\
 \bottomrule
 \end{tabular}
 \end{center}

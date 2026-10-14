@@ -125,3 +125,47 @@ const REAL = normpath(joinpath(@__DIR__, "..", "..", "..",
         @info "real run not found, skipping" REAL
     end
 end
+
+# ---- the pass ----------------------------------------------------------------
+"Minimal JSON reader for the dumps of the Python prototypes (objects, arrays, numbers, strings)."
+function JSON_parse(s::AbstractString)
+    pos = Ref(1)
+    skip() = (while pos[] <= lastindex(s) && isspace(s[pos[]]); pos[] = nextind(s, pos[]); end)
+    function value()
+        skip()
+        c = s[pos[]]
+        if c == '{'
+            pos[] = nextind(s, pos[]); d = Dict{String,Any}()
+            skip()
+            if s[pos[]] == '}'; pos[] = nextind(s, pos[]); return d; end
+            while true
+                skip(); k = value(); skip(); @assert s[pos[]] == ':'; pos[] = nextind(s, pos[])
+                d[k] = value(); skip()
+                if s[pos[]] == ','; pos[] = nextind(s, pos[]); continue; end
+                @assert s[pos[]] == '}'; pos[] = nextind(s, pos[]); return d
+            end
+        elseif c == '['
+            pos[] = nextind(s, pos[]); a = Any[]
+            skip()
+            if s[pos[]] == ']'; pos[] = nextind(s, pos[]); return a; end
+            while true
+                push!(a, value()); skip()
+                if s[pos[]] == ','; pos[] = nextind(s, pos[]); continue; end
+                @assert s[pos[]] == ']'; pos[] = nextind(s, pos[]); return a
+            end
+        elseif c == '"'
+            i = nextind(s, pos[]); j = i
+            while s[j] != '"'; j = nextind(s, j); end
+            pos[] = nextind(s, j); return String(s[i:prevind(s, j)])
+        else
+            j = pos[]
+            while j <= lastindex(s) && (isdigit(s[j]) || s[j] in "+-.eE"); j = nextind(s, j); end
+            tok = s[pos[]:prevind(s, j)]; pos[] = j
+            tok == "NaN" && return NaN
+            return occursin(r"[.eE]", tok) ? parse(Float64, tok) : parse(Int, tok)
+        end
+    end
+    return value()
+end
+
+include("test_pass.jl")

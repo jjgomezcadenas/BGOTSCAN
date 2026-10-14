@@ -10,6 +10,7 @@ Interactive: Enter goes to the next step, n to the next event, q quits. See docs
 import argparse
 import contextlib
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -253,11 +254,12 @@ def step5(ev, st, out, args):
     res = {}
     for meth, cm in estimates.items():
         S = (x - cm).sum(axis=0)
-        S = S - np.median(S[bwin])
-        res[meth] = (S, cm)
+        B0 = float(np.median(S[bwin]))
+        S = S - B0
+        res[meth] = (S, cm, B0)
         print(f"        {meth:7s} control rms {rms(S[cwin0]):7.1f} ADC   charge {dt * S[pwin0].sum():12.4g} ADC ns")
-    S, cm = res[args.cm]
-    out.update(S=S, cm=cm)
+    S, cm, B0 = res[args.cm]
+    out.update(S=S, cm=cm, B0=B0)
     print(f"        using {args.cm}")
     fig, ax = plt.subplots(figsize=(11, 3.8))
     ax.plot(t, res["none"][0], color="0.6", lw=0.6, label="no subtraction")
@@ -486,6 +488,7 @@ def main():
     ap.add_argument("--zs", type=float, default=3.0, help="zero-suppression threshold of step 12 (sigma)")
     ap.add_argument("--from-step", type=int, default=1, choices=range(1, 13), help="first step shown")
     ap.add_argument("--save", metavar="NAME", help="no prompts; save figures as src/py/plots/NAME_evE_sN.png")
+    ap.add_argument("--dump", metavar="FILE", help="write the per-event quantities of steps 3-9 to a JSON file")
     args = ap.parse_args()
     args.window = tuple(float(v) for v in args.window.split(","))
     if len(args.window) != 2:
@@ -500,6 +503,7 @@ def main():
         sys.exit(f"events out of range 0..{nev - 1}: {bad}")
     meas = np.asarray(f.attrs["baselines"], float)
 
+    dump = []
     for e in events:
         ev = load_event(f, e, meas)
         ev["run"] = path.stem
@@ -519,9 +523,19 @@ def main():
             if ans != "next":
                 break
         st.close()
+        if args.dump and "q" in out:
+            dump.append(dict(event=e, t_max=float(ev["t"][out["imax"]]), H=float(out["H"]),
+                             baseline=float(out["B0"] + out["B"]), rms=float(out["s1"]),
+                             win=[out["pwin"].start, out["pwin"].stop - 1],
+                             ctrl=[out["cwin"].start, out["cwin"].stop - 1],
+                             q=[float(v) for v in out["q"]], S=[float(v) for v in out["S"]]))
         if ans == "quit":
             break
         print()
+    if args.dump:
+        with open(args.dump, "w") as fo:
+            json.dump(dump, fo)
+        print(f"dump written to {args.dump} ({len(dump)} events)")
 
 
 if __name__ == "__main__":
