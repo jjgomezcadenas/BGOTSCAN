@@ -16,9 +16,10 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import PLOTS, REPO, find_pass
+from bgo.io import PLOTS, REPO, find_pass, read_map
 from bgo.signal import smooth, rms, clipped_rms, pulse_search, windows
-from bgo.fit import fit_photopeak, peak_bg, fit_decay, decay, fit_decay2, decay2
+from bgo.fit import fit_photopeak, find_photopeak, peak_bg, fit_decay, decay, fit_decay2, decay2
+from bgo.plot import map8
 
 DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
 GAIN = REPO / "src" / "spe_gain_195K_41V_th20.csv"
@@ -120,12 +121,50 @@ def main():
     Q_all_eq = qe.sum(axis=1); Q_0_eq = (qe * pos).sum(axis=1); Q_kept_eq = (qe * kept).sum(axis=1)
     mult = (sig & live).sum(axis=1)
     est = dict(Q=Q, Q_all=Q_all, Q_0=Q_0, Q_kept=Q_kept, Q_all_eq=Q_all_eq, Q_0_eq=Q_0_eq, Q_kept_eq=Q_kept_eq)
+    # the channel with the largest charge (a proxy for the position of the light) and its distance to the dead block
+    cmap = read_map()
+    xy = np.array([cmap.get(c, (np.nan, np.nan)) for c in channels])
+    seed = np.where(live, qe, -np.inf).argmax(axis=1)
+    dead_xy = np.array([cmap[c] for c in dead if c in cmap])
+    d_dead = (np.sqrt(((xy[seed][:, None, :] - dead_xy[None, :, :]) ** 2).sum(axis=2)).min(axis=1)
+              if len(dead_xy) else np.full(nev, np.inf))
 
     # ---- per run: classes, photopeaks, average pulse ---------------------------------------
     sel = (cls == 1) & ~pile
     frac = {n: float((cls == i).mean()) for i, n in enumerate(CLASSES)}
     pile_frac = float(pile[cls == 1].mean()) if (cls == 1).any() else np.nan
     fits = {n: fit_photopeak(v[sel]) for n, v in est.items()}
+    # resolution against the distance of the seed channel to the dead block
+    print(f"  seed channel distance to the nearest dead cell, Q_0_eq photopeak (REAL without pile-up):")
+    for lab, m in (("on the block (< 6 mm)", d_dead < 6), ("next to it (6 to 12 mm)", (d_dead >= 6) & (d_dead < 12)),
+                   ("far (>= 12 mm)", d_dead >= 12), ("far (>= 18 mm)", d_dead >= 18)):
+        fi = fit_photopeak(est["Q_0_eq"][sel & m])
+        print(f"    {lab:26s}: {int((sel & m).sum()):5d} events, " + (f"peak {fi['mu']:.4g}, FWHM {100 * fi['fwhm_rel']:.1f}%"
+              if fi["ok"] else f"no fit ({fi['why']})"))
+    # photopeak per seed channel: position (mode of the smoothed histogram) and width where the fit works
+    seed_ch = np.array(channels)[seed]
+    pos_map, wid_map, n_map = {}, {}, {}
+    vals = est["Q_0_eq"]
+    for c in channels:
+        m = sel & (seed_ch == c)
+        n_map[c] = int(m.sum())
+        if n_map[c] >= 40:
+            h, edges = np.histogram(vals[m], bins=60, range=(0, np.percentile(vals[sel], 99.5)))
+            cc = 0.5 * (edges[1:] + edges[:-1])
+            mu0, s0 = find_photopeak(h, cc, 0.25, 3)
+            pos_map[c] = mu0
+            fi = fit_photopeak(vals[m], nbins=60) if n_map[c] >= 100 else None
+            wid_map[c] = fi["fwhm_rel"] if fi is not None and fi["ok"] else 2.355 * s0 / mu0
+    if pos_map:
+        pv = np.array(list(pos_map.values())); wv = np.array(list(wid_map.values()))
+        print(f"  photopeak per seed channel ({len(pos_map)} channels with 40+ events): position median {np.median(pv):.4g}, "
+              f"spread (rms/median) {pv.std() / np.median(pv):.2f}, lowest/highest {pv.min() / np.median(pv):.2f}/{pv.max() / np.median(pv):.2f}; "
+              f"width within a cell: median {100 * np.median(wv):.0f}%, range {100 * wv.min():.0f} to {100 * wv.max():.0f}%")
+    for lab, m in (("multiplicity <= 6", mult <= 6), ("multiplicity 7 to 10", (mult > 6) & (mult <= 10)), ("multiplicity > 10", mult > 10),
+                   ("t_max < 0.3 us", t[imax] < 300), ("t_max >= 0.3 us", t[imax] >= 300)):
+        fi = fit_photopeak(vals[sel & m])
+        print(f"    {lab:22s}: {int((sel & m).sum()):5d} events, " + (f"peak {fi['mu']:.4g}, FWHM {100 * fi['fwhm_rel']:.1f}%"
+              if fi["ok"] else f"no fit ({fi['why']})"))
     # average pulse of the REAL events without pile-up, aligned on the maximum
     centre = 300
     acc = np.zeros(ns); cnt = np.zeros(ns)
@@ -174,7 +213,8 @@ def main():
         for name, arr in (("index", index), ("cls", cls.astype(np.int8)), ("pileup", pile), ("dt_pile", dt_pile.astype(np.float32)),
                           ("t_max", t[imax].astype(np.float32)), ("H", H.astype(np.float32)),
                           ("t_rise", np.where(irise >= 0, t[np.maximum(irise, 0)], np.nan).astype(np.float32)),
-                          ("Q", Q.astype(np.float32)), ("Q_ctrl", Qc.astype(np.float32)), ("mult", mult.astype(np.int16))):
+                          ("Q", Q.astype(np.float32)), ("Q_ctrl", Qc.astype(np.float32)), ("mult", mult.astype(np.int16)),
+                          ("seed", np.array(channels)[seed].astype(np.int16)), ("d_dead", d_dead.astype(np.float32))):
             f[name] = arr
         for n in ESTIMATORS[1:]:
             f[n] = est[n].astype(np.float32)
@@ -251,11 +291,18 @@ def main():
     ax.title.set_fontsize(10); ax.grid(lw=0.3); ax.legend(fontsize=8)
     fig.tight_layout(); figs["pileup"] = fig
 
+    if pos_map:
+        fig, axs = plt.subplots(1, 3, figsize=(16, 5))
+        map8(axs[0], {c: v / np.median(pv) for c, v in pos_map.items()}, "photopeak position by seed channel (median = 1)")
+        map8(axs[1], {c: 100 * v for c, v in wid_map.items()}, "FWHM within the cell (%)", "{:.0f}")
+        map8(axs[2], {c: v for c, v in n_map.items() if v > 0}, "events per seed channel", "{:.0f}")
+        fig.suptitle(f"{run}: Q_0_eq by seed channel, REAL without pile-up", x=0.01, ha="left")
+        fig.tight_layout(); figs["seedmap"] = fig
     if args.save:
         PLOTS.mkdir(exist_ok=True)
         for tag, fg in figs.items():
             fg.savefig(PLOTS / f"{args.save}_{tag}.png", dpi=130)
-        print(f"  figures saved as {PLOTS}/{args.save}_{{spectra,classes,pulse,pileup}}.png")
+        print(f"  figures saved as {PLOTS}/{args.save}_{{spectra,classes,pulse,pileup,seedmap}}.png")
     else:
         plt.show()
 

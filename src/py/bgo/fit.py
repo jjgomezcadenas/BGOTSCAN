@@ -69,12 +69,11 @@ def peak_bg(x, n, mu, s, c0, c1):
 
 
 def find_photopeak(h, c, frac=0.25, nsm=5):
-    """Rightmost local maximum of the smoothed histogram above `frac` of its maximum: (centre, sigma),
-    sigma from the width of the smoothed peak at half its height (FWHM / 2.355)."""
+    """Highest maximum of the smoothed histogram (the 511 keV peak dominates these spectra; the
+    rightmost maximum above a fraction of it, used first, picked the 1275 keV bump in small samples):
+    (centre, sigma), sigma from the width of the smoothed peak at half its height (FWHM / 2.355)."""
     hs = np.convolve(h, np.ones(nsm) / nsm, mode="same")
-    i = np.arange(1, len(hs) - 1)
-    loc = i[(hs[i] >= hs[i - 1]) & (hs[i] > hs[i + 1]) & (hs[i] > frac * hs.max())]
-    k = int(loc[-1]) if len(loc) else int(hs.argmax())
+    k = int(hs.argmax())
     half = 0.5 * hs[k]
     lo = k
     while lo > 0 and hs[lo] > half:

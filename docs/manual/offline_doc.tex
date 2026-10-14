@@ -137,10 +137,10 @@ of the main pulse passing as a second one.
 \paragraph{Spectra and photopeak.} For the REAL events without pile-up,
 the histogram of each of the seven charges ($Q$ and the six from the
 channels), 200 bins from zero to the 99.5th percentile. The photopeak is
-located as the rightmost local maximum of the smoothed histogram that
-stands above 25\% of its global maximum: the 511~keV peak dominates the
-spectrum, the Compton continuum lies below it, and the 1275~keV line is
-too weak to pass. It is fitted with a Gaussian on a background,
+located as the highest maximum of the smoothed histogram: the 511~keV
+peak dominates the spectrum, the Compton continuum lies below it and the
+1275~keV line is weaker (a rule that took the rightmost maximum above a
+quarter of the highest picked the 1275~keV bump in small samples). It is fitted with a Gaussian on a background,
 \[
   f(x) = n\, e^{-(x - \mu)^2 / 2 s^2} + c_0\, \tfrac{1}{2}\operatorname{erfc}\!\big(\tfrac{x - \mu}{s\sqrt 2}\big) + c_1,
 \]
