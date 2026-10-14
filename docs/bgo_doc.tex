@@ -1,0 +1,123 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{bgo}: the shared code of the Python scripts}
+\author{BGOTSCAN}
+\date{2026-10-14}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+The Python scripts of \code{src/py/} (\code{wfview.py}, \code{selection.py},
+\code{spe.py}, \code{template.py}, \code{chanstat.py}, \code{spefit.py})
+share their paths, their waveform definitions, the peak fit and the
+step-by-step display. These live in the package \code{src/py/bgo/}, and
+the scripts import from it only, never from one another. The physics of
+each definition is explained once, in the document of the script that
+introduced it; this document lists the functions with their signatures,
+their one-line meaning and that reference. The definitions of
+\code{bgo.signal} are the ones the Julia pass mirrors
+(\code{jscan\_doc.tex}), and the equivalence test of the pass compares the
+two.
+
+Scripts are run from anywhere with \code{python3 src/py/SCRIPT.py}; the
+package is found because it sits next to them.
+
+\section{\code{bgo.io}: paths and small inputs}
+
+\begin{longtable}{l p{92mm}}
+\toprule
+name & meaning \\
+\midrule
+\endfirsthead
+\toprule
+name & meaning \\
+\midrule
+\endhead
+\code{REPO}, \code{DATA}, \code{PLOTS}, \code{PASS}, \code{MAP} & the repository, the data directory (\code{2026\_10\_02\_bgo\_cryo\_tempscan/data\_cryo}), the scratch figures (\code{src/py/plots}, not in git), the pass output (\code{pass/}, not in git), the channel map (\code{src/channel\_map.csv}) \\
+\code{parse\_events(spec)} & \code{"a-b"} (inclusive) or \code{"a,b,c"} to a list of 0-based event indices \\
+\code{find\_run(run, data\_dir)} & a run name with or without \code{.h5}, or a path, to the file; exits with a message if absent \\
+\code{find\_pass(run, pass\_dir=PASS)} & a run name or a path to its pass output \code{RUN\_pass.h5} \\
+\code{read\_map(path=MAP)} & \{channel: (x, y) in mm\} from the channel map \\
+\code{read\_template(path)} & the SPE template values from a CSV written by \code{template.py}; exits if the centre is not 1 \\
+\bottomrule
+\end{longtable}
+
+\section{\code{bgo.signal}: waveform definitions}
+
+Arrays are numpy; a channel waveform is 1-D, an event is (channels,
+samples); indices 0-based; windows are Python slices (stop exclusive)
+unless stated.
+
+\begin{longtable}{l p{70mm} l}
+\toprule
+name & meaning & defined in \\
+\midrule
+\endfirsthead
+\toprule
+name & meaning & defined in \\
+\midrule
+\endhead
+\code{smooth(x, n)} & moving average of width $n$ along the last axis, edges with the samples available; $n \le 1$ returns $x$ & wfview, moving average \\
+\code{rms(v)} & population standard deviation (\code{numpy.std}) & \\
+\code{clipped\_rms(v, nsig=3)} & rms after removing the samples beyond \code{nsig} times a first rms & template, step 5 \\
+\code{baseline\_window(where, n, pre, ns)} & slice of the last $n$ samples (\code{"end"}) or the first $\min(n, \code{pre})$ (\code{"pre"}) & selection, step 6 \\
+\code{pulse\_search(S, nsm)} & \code{(Sh, imax, H, irise)}: moving average, its maximum, height, rising edge (\code{None} if none) & selection, step 7 \\
+\code{windows(imax, a, b, ns)} & \code{(pwin, cwin, short)}: charge window $[i_{\max}-a, i_{\max}+b]$ clipped, control window of the same length in the pulse-free part, \code{short} if that part is shorter & selection, step 8 \\
+\code{interp\_cm(m, win, edge=16)} & $m$ with \code{win} replaced by a line between the means of \code{edge} samples on each side (the other side when at a record edge) & selection, step 4 \\
+\code{search\_region(kind, tail\_us, ns, dt)} & slice of the last \code{tail\_us} \us{} (\code{"tail"}) or the whole record (\code{"all"}) & spe, step 1 \\
+\code{find\_candidates(x, region, nsm, thr, sep)} & \code{(smoothed, indices)}: local maxima of the smoothed $x$ inside the region above \code{thr}, taken in decreasing order, at least \code{sep} apart & spe, step 2 \\
+\code{matched(x, T)} & least-squares height of a pulse of shape $T$ at every sample, $\sum_j T_j x_{i+j} / \sum T^2$, zero within $H$ of the edges & spe, step 2 \\
+\code{channel\_search(x, T, region, nsig)} & \code{(y, sigma\_y, thr, cands, residuals)}: the filtered waveform, its clipped rms over the region, the threshold \code{nsig * sigma\_y}, the candidates and the residual rms of the template fit at each & spe, steps 2--3 \\
+\bottomrule
+\end{longtable}
+
+\section{\code{bgo.fit}: the single-photoelectron peak}
+
+\begin{longtable}{l p{92mm}}
+\toprule
+name & meaning \\
+\midrule
+\endfirsthead
+\toprule
+name & meaning \\
+\midrule
+\endhead
+\code{ABIN}, \code{AMAX} & histogram of the filtered amplitude: 1-count bins up to 80 \\
+\code{gauss(a, n, mu, w)} & $n \exp(-(a-\mu)^2 / 2w^2)$ \\
+\code{fit\_peak(A, thr, sy)} & the fit of spe step 6: histogram of \code{A}, Gaussian between \code{thr + sy} and 1.6 times the mode, mean bounded to that range, width to $[0.5\,\code{sy}, 1.6 \times \mathrm{mode}]$, Poisson weights; returns a dict with \code{n, A1, err, w1, ok, why, h, edges, lo, hi}; \code{ok} is false with the reason in \code{why} when fewer than 30 pulses, no convergence, or bounds reached \\
+\code{crosstalk\_ratio(values, m)} & pulses in $[1.5m, 2.5m)$ over pulses below $1.5m$ \\
+\bottomrule
+\end{longtable}
+
+\section{\code{bgo.plot}: display}
+
+\begin{longtable}{l p{92mm}}
+\toprule
+name & meaning \\
+\midrule
+\endfirsthead
+\toprule
+name & meaning \\
+\midrule
+\endhead
+\code{Stepper(save, run, event, names)} & the step-by-step display: \code{show(step, fig, ask\_k=False)} titles the figure with the run, the event and \code{names[step-1]}, saves it as \code{PLOTS/save\_evE\_sN.png} when \code{save} is set, otherwise shows it and waits: returns \code{"next"} (Enter), \code{"skip"} (\code{n}), \code{"quit"} (\code{q}) or \code{("k", value)} when \code{ask\_k} and a number was typed; \code{silent} makes it close the figure and return \code{"next"}; \code{close()} closes the current figure \\
+\code{grid64(values, t=None, title="")} & an $8\times8$ figure in channel order: waveforms over \code{t} when \code{values} maps channels to arrays, or a map with the number printed in each cell when it maps channels to numbers \\
+\code{map8(ax, values, title, fmt)} & the same map drawn into an existing axis, for multi-panel figures \\
+\bottomrule
+\end{longtable}
+
+\end{document}

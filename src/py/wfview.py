@@ -14,38 +14,10 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-HERE = Path(__file__).resolve().parent
-REPO = HERE.parent.parent
-DATA = REPO / "2026_10_02_bgo_cryo_tempscan" / "data_cryo"
-PLOTS = HERE / "plots"
+from bgo.io import DATA, PLOTS, find_run, parse_events
+from bgo.signal import smooth
+
 CHUNK = 500
-
-
-def parse_events(spec):
-    if "-" in spec:
-        a, b = spec.split("-")
-        return list(range(int(a), int(b) + 1))
-    return [int(x) for x in spec.split(",") if x]
-
-
-def find_run(run, data_dir):
-    p = Path(run)
-    if p.is_file():
-        return p
-    for cand in (data_dir / run, data_dir / (run + ".h5")):
-        if cand.is_file():
-            return cand
-    sys.exit(f"run not found: {run} (looked in {data_dir})")
-
-
-def smooth(x, n):
-    """Moving average of width n along the last axis (edges use what is available)."""
-    if n <= 1:
-        return x
-    k = np.ones(n)
-    num = np.apply_along_axis(lambda v: np.convolve(v, k, mode="same"), -1, x)
-    den = np.convolve(np.ones(x.shape[-1]), k, mode="same")
-    return num / den
 
 
 def sums(wf, events, meas, nbase):

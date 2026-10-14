@@ -39,7 +39,8 @@ measured by \code{template.py}. The script walks one event in six steps,
 as \code{selection.py}; its normal use is the \code{--summary} mode over
 many events, which prints the per-channel single-photoelectron amplitudes
 and the equalization factors. It is a Python script in \code{src/py/},
-reading the raw HDF5 files with h5py.
+reading the raw HDF5 files with h5py; the shared definitions come from the
+package \code{bgo} (\code{bgo\_doc.tex}).
 
 \section{Usage}
 
@@ -139,7 +140,12 @@ threshold $K \sigma_y$.
 \paragraph{Fit.} A Gaussian is fitted to the histogram of $A$ (1-count
 bins) between the threshold plus one $\sigma_y$ and 1.6 times the mode,
 by least squares with Poisson weights, the mean bounded to the fit range
-and the width to $[0.5\,\sigma_y, 1.6 \times \mathrm{mode}]$. Its mean is $A_1$, its width
+and the width to $[0.5\,\sigma_y, 1.6 \times \mathrm{mode}]$. Starting
+the range at the threshold itself was tried, on the grounds that the cut
+on $A$ only truncates the peak: the Gaussian then stretches over the
+truncation and the noise spike of the first bins, fewer channels pass
+the width bound (37 against 45 at 41~V) and the normal channels scatter
+more; the range one $\sigma_y$ above the cut is kept. Its mean is $A_1$, its width
 $w_1$; a fit is accepted if it has at least 30 pulses in the range, the
 mean lies inside the range, and $w_1$ is between $0.5\,\sigma_y$ and
 $A_1 / 2$. The fit is done for every channel and for all live channels
@@ -160,6 +166,50 @@ Figure: four panels: the spectrum of the selected channel with its fit;
 the spectrum of all live channels with its fit; the $8\times8$ map of
 $A_1$; the $8\times8$ map of $g_c$. With \code{--csv}, the per-channel
 table is written (channel, $n$, $A_1$, error, $w_1$, $g_c$).
+
+\section{\code{spefit.py}: the fit on the output of the pass}
+
+The pass of \code{JScan} (\code{jscan\_doc.tex}) applies steps 1 to 3 to
+every channel of every event of a run and writes the candidates (event,
+channel, time, $A$, residual) and $\sigma_y$ per channel and event to
+\code{pass/RUN\_pass.h5}. \code{spefit.py} does step~6 on that table: the
+spectra, the fits, the equalization factors. It reads only the pass
+output, in a second, and uses the fit of \code{bgo.fit}, so that the peak
+fit is defined once.
+
+\begin{lstlisting}
+python3 src/py/spefit.py RUN|FILE [--channel 48] [--min-pulses 30]
+        [--dead LIST] [--save NAME] [--csv FILE]
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{l l p{76mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{RUN|FILE} & & a run name, looked up as \code{pass/RUN\_pass.h5}, or a path \\
+\code{--channel C} & 48 & the channel whose spectrum is shown alone \\
+\code{--min-pulses N} & 30 & channels with fewer candidates are not fitted \\
+\code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & excluded from the reference and the maps \\
+\code{--save NAME} & off & figures saved as \code{src/py/plots/NAME\_spefit.png} and \code{NAME\_spefit\_channels.png}; otherwise shown \\
+\code{--csv FILE} & off & write the per-channel table (channel, $n$, $A_1$, error, $w_1$, $g_c$, rate) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Per channel, the threshold used by the pass is $K$ times the mean of
+$\sigma_y$ over the events ($K$ from the file metadata), and the fit is
+that of step~6: a bounded Gaussian between the threshold plus one
+$\sigma_y$ and 1.6 times the mode. The reference for $g_c$ is the median
+$A_1$ over the live channels with an accepted fit, dead channels
+excluded. The dark rate of a channel is its number of candidates divided
+by the total search time (events times the length of the search region).
+
+Text: the metadata of the pass (run, template, threshold, events), the
+fit of the selected channel and of all live channels together, one line
+per channel, the median $A_1$, the channels with $g_c$ more than 15\% from
+one. Figures: the four panels of step~6, and an $8\times8$ grid of the
+per-channel spectra with their fits, to judge each fit by eye.
 
 \section{Modes}
 

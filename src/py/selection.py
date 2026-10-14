@@ -18,7 +18,9 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from wfview import DATA, PLOTS, find_run, parse_events, smooth
+from bgo.io import DATA, PLOTS, find_run, parse_events
+from bgo.signal import smooth, rms, baseline_window, pulse_search, windows, interp_cm
+from bgo.plot import Stepper, grid64
 
 WRAP = 2 ** 24
 CM_METHODS = ("median", "interp", "none")     # not the mean: it makes the sum identically zero
@@ -29,128 +31,7 @@ ZS_THRESHOLDS = (0, 1, 2, 3, 5, 8)
 
 
 # ---- display ---------------------------------------------------------------------------
-class Stepper:
-    """Shows one figure per step and waits on the terminal, or saves without prompting.
-
-    show() returns "next" (go on), "skip" (abandon this event), "quit", or ("k", value) when
-    ask_k is set and a number was typed."""
-
-    def __init__(self, save, run, event, names=STEPS):
-        self.save, self.run, self.event, self.names = save, run, event, names
-        self.fig = None
-        self.silent = False                 # True for steps before --from-step: compute only
-        if not save:
-            plt.ion()
-
-    def show(self, step, fig, ask_k=False):
-        if self.silent:
-            plt.close(fig)
-            return "next"
-        fig.suptitle(f"{self.run}: event {self.event}, step {step}: {self.names[step - 1]}",
-                     x=0.01, ha="left")
-        fig.tight_layout()
-        if self.save:
-            PLOTS.mkdir(exist_ok=True)
-            out = PLOTS / f"{self.save}_ev{self.event}_s{step}.png"
-            fig.savefig(out, dpi=130)
-            print(f"  saved {out}")
-            plt.close(fig)
-            return "next"
-        if self.fig is not None:
-            plt.close(self.fig)
-        self.fig = fig
-        fig.show()
-        plt.pause(0.2)
-        if ask_k:
-            ans = input("  [Enter] next step, <number> redo with that k, n next event, q quit: ").strip().lower()
-            try:
-                return ("k", float(ans))
-            except ValueError:
-                pass
-        else:
-            ans = input("  [Enter] next step, n next event, q quit: ").strip().lower()
-        return {"q": "quit", "n": "skip"}.get(ans, "next")
-
-    def close(self):
-        if self.fig is not None:
-            plt.close(self.fig)
-            self.fig = None
-
-
-def grid64(values, t=None, title=""):
-    """8x8 grid in channel order: waveforms (values[c] over t) or one number per channel."""
-    if t is None:                                     # map
-        fig, ax = plt.subplots(figsize=(6.4, 5.6))
-        img = np.full((8, 8), np.nan)
-        for c, v in values.items():
-            img[c // 8, c % 8] = v
-        im = ax.imshow(img, cmap="viridis")
-        for c, v in values.items():
-            ax.text(c % 8, c // 8, f"{c}\n{v:.1f}", ha="center", va="center", fontsize=7,
-                    color="w" if v < np.nanmax(img) / 2 else "k")
-        fig.colorbar(im, ax=ax, label=title)
-        ax.set(xticks=[], yticks=[])
-        return fig
-    fig, axs = plt.subplots(8, 8, figsize=(14, 9), sharex=True, sharey=True)
-    for c, ax in enumerate(axs.flat):
-        if c in values:
-            ax.plot(t, values[c], color="C0", lw=0.5)
-        ax.axvline(0, color="0.4", ls="--", lw=0.5)
-        ax.text(0.03, 0.85, str(c), transform=ax.transAxes, fontsize=7)
-        ax.tick_params(labelsize=6)
-        ax.grid(lw=0.3)
-    return fig
-
-
 # ---- definitions (the ones JScan will implement) ---------------------------------------
-def baseline_window(where, nbase, pre, ns):
-    return slice(ns - nbase, ns) if where == "end" else slice(0, min(nbase, pre))
-
-
-def pulse_search(S, nsm):
-    """Smoothed sum, its maximum, height and rising edge (None if above H/2 from the start)."""
-    Sh = smooth(S, nsm)
-    imax = int(Sh.argmax())
-    H = Sh[imax]
-    below = np.flatnonzero(Sh[:imax] < H / 2)
-    irise = int(below[-1]) if len(below) else None
-    return Sh, imax, H, irise
-
-
-def windows(imax, a, b, ns):
-    """Charge window around imax and a control window of the same length in the pulse-free part."""
-    lo, hi = max(0, imax - a), min(ns, imax + b + 1)
-    n = hi - lo
-    before, after = (0, lo), (hi, ns)
-    seg = after if (after[1] - after[0]) >= (before[1] - before[0]) else before
-    length = seg[1] - seg[0]
-    short = length < n
-    if seg is after:
-        ctrl = slice(max(seg[0], seg[1] - n), seg[1])
-    else:
-        ctrl = slice(seg[0], min(seg[1], seg[0] + n))
-    return slice(lo, hi), ctrl, short
-
-
-def interp_cm(m, win, edge):
-    """m with the window replaced by a line between the means of `edge` samples on each side.
-
-    Returns (mt, L, R, lwin, rwin); lwin or rwin is None when the window touches that end of
-    the record, and the other end's mean is then used for both."""
-    lo, hi = win.start, win.stop
-    lwin = slice(max(0, lo - edge), lo) if lo > 0 else None
-    rwin = slice(hi, min(len(m), hi + edge)) if hi < len(m) else None
-    L = m[lwin].mean() if lwin is not None else m[rwin].mean()
-    R = m[rwin].mean() if rwin is not None else L
-    mt = m.copy()
-    mt[lo:hi] = np.linspace(L, R, hi - lo)
-    return mt, L, R, lwin, rwin
-
-
-def rms(v):
-    return float(np.std(v))
-
-
 # ---- steps -----------------------------------------------------------------------------
 def step1(ev, st):
     print(f"step 1: {ev['run']} event {ev['e']}: trigger_id {ev['tid']}, timestamp {ev['ts'] / 1e3:.3f} us"
@@ -507,7 +388,7 @@ def main():
     for e in events:
         ev = load_event(f, e, meas)
         ev["run"] = path.stem
-        st = Stepper(args.save, path.stem, e)
+        st = Stepper(args.save, path.stem, e, names=STEPS)
         out = {}
         steps = [lambda: step1(ev, st), lambda: step2(ev, st, out)] + [
             (lambda f: (lambda: f(ev, st, out, args)))(f)

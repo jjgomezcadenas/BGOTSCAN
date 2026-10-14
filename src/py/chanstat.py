@@ -15,33 +15,9 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from wfview import DATA, PLOTS, find_run, parse_events, smooth
-from spe import search_region, find_candidates
-from template import clipped_rms
-
-MAP = Path(__file__).resolve().parent.parent / "channel_map.csv"
-
-
-def read_map(path=MAP):
-    out = {}
-    with open(path) as f:
-        for row in csv.DictReader(l for l in f if not l.startswith("#")):
-            out[int(row["channel"])] = (float(row["x_mm"]), float(row["y_mm"]))
-    return out
-
-
-def map8(ax, values, title, fmt="{:.2f}"):
-    img = np.full((8, 8), np.nan)
-    for c, v in values.items():
-        img[c // 8, c % 8] = v
-    im = ax.imshow(img, cmap="viridis")
-    vmax = np.nanmax(img) if np.isfinite(img).any() else 1
-    for c, v in values.items():
-        ax.text(c % 8, c // 8, f"{c}\n{fmt.format(v)}", ha="center", va="center", fontsize=6.5,
-                color="w" if v < vmax / 2 else "k")
-    ax.set(xticks=[], yticks=[], title=title)
-    ax.title.set_fontsize(10)
-    plt.colorbar(im, ax=ax, fraction=0.046)
+from bgo.io import DATA, PLOTS, find_run, parse_events, read_map
+from bgo.signal import smooth, clipped_rms, search_region, find_candidates
+from bgo.plot import map8
 
 
 def main():

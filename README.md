@@ -33,7 +33,7 @@ The file layout (datasets and attributes) is documented in
 - `src/jscan/`: Julia project `JScan`, the processing side (reads the runs,
   will hold the per-event passes). Tests in `src/jscan/test/`.
 - `src/py/`: Python scripts for plots and quick looks, reading the raw HDF5
-  files with h5py. `wfview.py` is the waveform viewer, `runinfo.py` tabulates
+  files with h5py; their shared code is the package `src/py/bgo/`. `wfview.py` is the waveform viewer, `runinfo.py` tabulates
   the run conditions and trigger rates, `selection.py` walks through the
   event selection one event at a time. Figures they save go to
   `src/py/plots/` (not in git).
@@ -41,8 +41,9 @@ The file layout (datasets and attributes) is documented in
   for Julia to read the LZF-compressed files (h5py has it built in). See
   below.
 - `docs/`: LaTeX documentation, one file per module or script
-  (`jscan_doc.tex`, `wfview_doc.tex`, `runinfo_doc.tex`,
-  `selection_doc.tex`); the figures they include are in `docs/figs/`.
+  (`jscan_doc.tex`, `wfview_doc.tex`, `runinfo_doc.tex`, `selection_doc.tex`,
+  `spe_doc.tex`, `template_doc.tex`, `chanstat_doc.tex`, `bgo_doc.tex`); the
+  figures they include are in `docs/figs/`.
 - `nb/`: notebooks received from the authors, kept as received.
 - `ANALYSIS.md`: the dated log of findings, decisions and open questions.
 
