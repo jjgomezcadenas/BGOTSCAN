@@ -194,10 +194,9 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   maximum) broadens the template by the alignment jitter; the first
   template, aligned on the raw maximum, is sharpened by the selection
   bias; the truth is in between. To be fixed or dropped.
-- Conclusion for now: the gain per run comes from the bias scans, not
-  from SPE spectra; the SPE needs a dark run with long records at high
-  bias, or a lower-noise chain. The pulse shape at 41 V is kept as the
-  template for a matched filter if one is needed.
+- Superseded below: with the full statistics of the pass the SPE peak is
+  measurable per channel at 41 V (and only there); the pulse shape at
+  41 V is the template of the matched filter.
 
 ### The 64 channels (`src/py/chanstat.py`, `docs/chanstat_doc.tex`)
 
@@ -222,6 +221,40 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   `src/spe_template_195K_41V_th20.csv` (one file per run). The refined template of step 5 comes out with a
   longer tail in every variant (the filtered selection favours tailed
   pulses) and is kept as a diagnostic only.
+
+### SPE with full statistics from the pass (`src/jscan`, `src/py/spefit.py`)
+
+- The JScan pass reads a run in 27 s and writes 27 MB: per event the
+  corrected summed waveform (Int16, scale 4), the charge and time of
+  every channel in the window, and the SPE candidates of every channel
+  (matched filter, 4.5 sigma). On 195K_41V_th20: 28 664 candidates, 0.09
+  per channel and event; the Python prototypes are reproduced on a
+  three-event fixture (225 of 225 comparisons).
+- 195K_41V_th20 (overvoltage 6.5 V): a clear single-photoelectron peak
+  in nearly every live channel, median 20.7 counts, cut on its low side
+  by the 17-count threshold. 45 of 52 live channels fitted; normal
+  channels within ±9% of one another, errors 1 to 4 counts. Ringers:
+  11 at 28.2, 12 at 30.5, 49 at 31.4 counts (g = 1.36, 1.48, 1.52); 48
+  bimodal (peaks near 22 and 33), no fit. Dead channels: 0.3 to 1.8 kHz
+  of candidates, all at the threshold (the noise floor, a few percent of
+  the live channels' 8 to 15 kHz).
+- The 196 K bias scan (41, 40.5, 40, 39.5, 39 V, all with the 41 V
+  template): the normal channels cannot be followed below 41 V, their
+  true peak slides from 20.7 to about 14 counts, below the threshold, and
+  the fit is pinned at 20. Channel 49, whose peak stays above the cut,
+  gives 31.4, 29.2, 26.7 counts at 41, 40.5, 40 V: 4.7 counts per volt,
+  zero at 34.3 V. The datasheet line gives 34.5 V at T3 and 34.9 V at T2:
+  the breakdown at 196 K is where the datasheet puts it within half a
+  volt; f (SiPM temperature between T3 and T2) is not resolvable this
+  way.
+- The ringer factor is constant with bias: channel 49 over the normal
+  amplitude scaled by overvoltage gives 1.52, 1.53, 1.53, 1.48 at 41 to
+  39.5 V. A lower breakdown would make it grow as the bias drops; a
+  constant factor is a larger gain after the SiPM (the shaper channel).
+  Hence one equalization table, from the 41 V run, applies to every run
+  and temperature; channel 48 from its light response.
+- Dark rate per live channel at 196 K: 12 kHz at 41 V, 1 kHz at 39 V
+  (threshold effect and dark-count dependence together).
 
 ### Consequences for the light yield
 
