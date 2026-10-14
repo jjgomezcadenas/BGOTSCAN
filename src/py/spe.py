@@ -114,6 +114,7 @@ def fit_peak(A, thr, sy):
         return out
     try:
         p, cov = curve_fit(gauss, c[sel], h[sel], p0=(h[sel].max(), mode, max(sy, 1.0)),
+                           bounds=([0, lo, 0.5 * sy], [np.inf, hi, hi]),
                            sigma=np.sqrt(np.maximum(h[sel], 1.0)), absolute_sigma=True, maxfev=5000)
     except RuntimeError:
         out["why"] = "fit did not converge"
