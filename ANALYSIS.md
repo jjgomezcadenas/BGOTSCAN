@@ -67,6 +67,49 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   events looked at, 31 mm apart: a map or trigger question to settle with
   the occupancy map.
 
+### Thermal layout and the SiPM temperature (`docs/figs/thermometers.jpg`)
+
+- The crystal hangs in an aluminium frame heated top (heater 1) and bottom
+  (heater 2); T1 is on the top plate, T2 at the bottom of the frame, T3 at
+  the centre of the back face between the Teflon-wrapped crystal and the
+  SiPM array; the SiPM board is mounted on the frame. The crystal follows
+  the frame with a lag (Teflon); the SiPMs sit between T3 and the frame
+  temperature.
+- The frame had a vertical gradient at the warm points: T1 = 181 K against
+  T2 = 190 K in the 185 K group, 184 against 202 to 205 K in the 196 K
+  group. If the array shares part of it, the bottom rows are warmer than
+  the top rows: 20 K is 0.7 V of overvoltage, 10 to 15% of gain across
+  the array in the warm runs, none at 128 K where the three thermometers
+  agree within 3 K. Testable: the per-channel response (mean charge of a
+  channel in the photopeak events that light it) against the row of the
+  map, at 196 K and at 128 K. If present, equalization must be per run
+  from the per-channel response; one more reason to keep the 64
+  per-channel charges in the pass output.
+- Operative SiPM temperature: T_SiPM = T3 + f (T2 - T3), with f between 0
+  and 1 to be fixed from the data (the breakdown voltage from the bias
+  scans at 185 and 196 K against the datasheet coefficient). Expected
+  overvoltage per run, with Vbd(T) = 38 V + 34 mV/K (T - 298.15 K), for
+  f = 0, 0.5 and 1:
+
+| Run | Bias (V) | T3 (K) | (T2+T3)/2 (K) | T2 (K) | OV at T3 | OV at mid | OV at T2 |
+|---|---|---|---|---|---|---|---|
+| 128K_37V_th19 | 37.0 | 128.6 | 130.2 | 131.8 | 4.77 | 4.71 | 4.66 |
+| 153K_38V_th19 | 38.0 | 153.1 | 155.3 | 157.5 | 4.93 | 4.86 | 4.78 |
+| 164K_39V_th19 | 39.0 | 164.8 | 168.8 | 172.9 | 5.53 | 5.40 | 5.26 |
+| 184K_40V_th19 | 40.0 | 184.8 | 187.5 | 190.1 | 5.85 | 5.76 | 5.67 |
+| 185K_39d5V_th19 | 39.5 | 185.8 | 188.0 | 190.1 | 5.32 | 5.25 | 5.17 |
+| 186K_39V_th19 | 39.0 | 186.6 | 188.4 | 190.2 | 4.79 | 4.73 | 4.67 |
+| 187K_38d5V_th19 | 38.5 | 187.4 | 188.8 | 190.2 | 4.26 | 4.22 | 4.17 |
+| 195K_41V_th20 | 41.0 | 195.8 | 200.4 | 205.0 | 6.48 | 6.32 | 6.17 |
+| 196K_40d5V_th20 | 40.5 | 196.2 | 200.1 | 203.9 | 5.96 | 5.84 | 5.71 |
+| 196K_40V_th20 | 40.0 | 196.6 | 199.8 | 203.1 | 5.45 | 5.34 | 5.23 |
+| 196K_39d5V_th20 | 39.5 | 196.9 | 199.7 | 202.5 | 4.94 | 4.85 | 4.75 |
+| 197K_39V_th20 | 39.0 | 197.3 | 199.6 | 201.9 | 4.43 | 4.35 | 4.27 |
+
+  The spread between f = 0 and f = 1 is 0.1 V at 128 K and 0.2 to 0.3 V
+  at the warm end, against a 35% rise of the overvoltage along the scan:
+  the assumption on f is a second-order effect, the scan-wide rise is not.
+
 ### Acquisition and trigger (`src/py/runinfo.py`, `docs/runinfo_doc.tex`)
 
 - Every run records its 5000 events in 40.7 s, 123 Hz, in bursts of 3 events
