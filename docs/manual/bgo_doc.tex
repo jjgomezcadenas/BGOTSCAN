@@ -100,6 +100,10 @@ name & meaning \\
 \code{gauss(a, n, mu, w)} & $n \exp(-(a-\mu)^2 / 2w^2)$ \\
 \code{fit\_peak(A, thr, sy)} & the fit of spe step 6: histogram of \code{A}, Gaussian between \code{thr + sy} and 1.6 times the mode, mean bounded to that range, width to $[0.5\,\code{sy}, 1.6 \times \mathrm{mode}]$, Poisson weights; returns a dict with \code{n, A1, err, w1, ok, why, h, edges, lo, hi}; \code{ok} is false with the reason in \code{why} when fewer than 30 pulses, no convergence, or bounds reached \\
 \code{crosstalk\_ratio(values, m)} & pulses in $[1.5m, 2.5m)$ over pulses below $1.5m$ \\
+\code{peak\_bg(x, n, mu, s, c0, c1)} & Gaussian on a Compton step (erfc) and a constant \\
+\code{find\_photopeak(h, c, frac=0.25)} & rightmost local maximum of the smoothed histogram above \code{frac} of its maximum (offline, spectra) \\
+\code{fit\_photopeak(values, nbins=200)} & histogram up to the 99.5th percentile, photopeak located and fitted twice with \code{peak\_bg} over $\mu \pm 2.5 s$; returns \code{mu, err, s, fwhm\_rel, n, ok, why, h, edges, lo, hi, p} \\
+\code{decay(t, A, tau, C)}, \code{fit\_decay(t, y, t0, t1)} & single exponential fitted to \code{y(t)} between \code{t0} and \code{t1}; returns \code{tau, err, A, C, ok, why, sel} \\
 \bottomrule
 \end{longtable}
 

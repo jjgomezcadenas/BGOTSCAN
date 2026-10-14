@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""offline.py: the analysis of one run from the output of the pass: classes, charges, photopeaks, decay.
+
+    python3 src/py/offline.py RUN|FILE [--window A,B] [--smooth 64] [--nsigma 5] [--k 3] [--gain FILE]
+            [--dead LIST] [--decay-range A,B] [--save NAME] [--out FILE]
+
+Reads pass/RUN_pass.h5 and the equalization table only. See docs/manual/offline_doc.tex.
+"""
+import argparse
+import csv
+import json
+import re
+
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+
+from bgo.io import PLOTS, REPO, find_pass
+from bgo.signal import smooth, rms, clipped_rms, pulse_search, windows
+from bgo.fit import fit_photopeak, peak_bg, fit_decay, decay
+
+DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
+GAIN = REPO / "src" / "spe_gain_195K_41V_th20.csv"
+CLASSES = ("EMPTY", "REAL", "TAIL")
+ESTIMATORS = ("Q", "Q_all", "Q_0", "Q_kept", "Q_all_eq", "Q_0_eq", "Q_kept_eq")
+
+
+def attr_str(a):
+    return a.decode() if isinstance(a, (bytes, np.bytes_)) else str(a)
+
+
+def read_gain(path):
+    """{channel: g} and the median A1 from the header of the table of spefit.py."""
+    g, a1 = {}, np.nan
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                m = re.search(r"median A1 \(([0-9.]+)\)", line)
+                if m:
+                    a1 = float(m.group(1))
+                continue
+            break
+    with open(path) as f:
+        for row in csv.DictReader(l for l in f if not l.startswith("#")):
+            if row["g"]:
+                g[int(row["channel"])] = float(row["g"])
+    return g, a1
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("run", help="run name (pass/RUN_pass.h5) or path to a pass file")
+    ap.add_argument("--window", help="charge window of the sum: ns before,after the maximum (default: the pass window)")
+    ap.add_argument("--smooth", type=int, default=64, help="moving-average width of the pulse search (samples)")
+    ap.add_argument("--nsigma", type=float, default=5.0, help="significance of the charge cut, pile-up and multiplicity")
+    ap.add_argument("--k", type=float, default=3.0, help="zero-suppression threshold of Q_kept (sigma)")
+    ap.add_argument("--gain", default=str(GAIN), help="equalization table (spefit.py)")
+    ap.add_argument("--dead", default=DEAD, help="dead channels, comma list")
+    ap.add_argument("--decay-range", default="0.5,4", help="us after the maximum for the exponential fit")
+    ap.add_argument("--save", metavar="NAME", help="save figures as src/py/plots/NAME_*.png")
+    ap.add_argument("--out", metavar="FILE", help="per-event output (default pass/RUN_offline.h5)")
+    args = ap.parse_args()
+    dead = {int(v) for v in args.dead.split(",") if v.strip()}
+    t0d, t1d = (float(v) * 1000 for v in args.decay_range.split(","))
+
+    path = find_pass(args.run)
+    with h5py.File(path, "r") as f:
+        A = {k: f.attrs[k] for k in f.attrs}
+        run = attr_str(A["run"])
+        dt, pre = float(A["tsample_ns"]), int(A["pretrigger"])
+        channels = [int(c) for c in A["channels"]]
+        T = np.asarray(A["template"], float)
+        win_pass = tuple(float(v) for v in A["window_ns"])
+        scale = float(f["sum"].attrs["scale"])
+        S_all = f["sum"][:].astype(np.float32) / scale           # (nev, ns)
+        qc = f["qc"][:].astype(np.float64)                        # (nev, nch)
+        qcc = f["qc_ctrl"][:].astype(np.float64)
+        index = f["events/index"][:]
+    nev, ns = S_all.shape
+    t = (np.arange(ns) - pre) * dt
+    a_ns, b_ns = (float(v) for v in args.window.split(",")) if args.window else win_pass
+    a, b = int(round(a_ns / dt)), int(round(b_ns / dt))
+    g_tab, a1 = read_gain(args.gain)
+    q_pe = a1 * T.sum() * dt if np.isfinite(a1) else np.nan
+
+    # ---- per event: pulse, windows, Q ----------------------------------------------------
+    imax = np.zeros(nev, int); H = np.zeros(nev); irise = np.full(nev, -1)
+    Q = np.zeros(nev); Qc = np.zeros(nev); sN = np.zeros(nev); P2 = np.zeros(nev); V = np.zeros(nev); i2 = np.zeros(nev, int)
+    for e in range(nev):
+        S = S_all[e].astype(np.float64)
+        Sh, im, h, ir = pulse_search(S, args.smooth)
+        pwin, cwin, _ = windows(im, a, b, ns)
+        imax[e], H[e], irise[e] = im, h, -1 if ir is None else ir
+        Q[e] = dt * S[pwin].sum(); Qc[e] = dt * S[cwin].sum()
+        sN[e] = rms(Sh[cwin])
+        masked = Sh.copy(); masked[pwin] = -np.inf
+        j = int(masked.argmax()); i2[e] = j; P2[e] = masked[j]
+        lo, hi = sorted((im, j)); V[e] = Sh[lo:hi + 1].min()
+    sigma_Q = clipped_rms(Qc)
+    real = Q >= args.nsigma * sigma_Q
+    cls = np.where(~real, 0, np.where(irise >= 0, 1, 2))
+    pile = (P2 > args.nsigma * sN) & (P2 - V > args.nsigma * sN)
+    dt_pile = (i2 - imax) * dt
+
+    # ---- per event: charges from the channels ---------------------------------------------
+    live = np.array([c not in dead for c in channels])
+    g = np.array([g_tab.get(c, 1.0) for c in channels])
+    no_g = [c for c, l in zip(channels, live) if l and c not in g_tab]
+    sq = np.array([clipped_rms(qcc[:, k]) for k in range(len(channels))])
+    qm = np.where(live, qc, 0.0)
+    pos = qm > 0
+    kept = qm > args.k * sq
+    sig = qm > args.nsigma * sq
+    Q_all = qm.sum(axis=1); Q_0 = (qm * pos).sum(axis=1); Q_kept = (qm * kept).sum(axis=1)
+    qe = qm / g
+    Q_all_eq = qe.sum(axis=1); Q_0_eq = (qe * pos).sum(axis=1); Q_kept_eq = (qe * kept).sum(axis=1)
+    mult = (sig & live).sum(axis=1)
+    est = dict(Q=Q, Q_all=Q_all, Q_0=Q_0, Q_kept=Q_kept, Q_all_eq=Q_all_eq, Q_0_eq=Q_0_eq, Q_kept_eq=Q_kept_eq)
+
+    # ---- per run: classes, photopeaks, average pulse ---------------------------------------
+    sel = (cls == 1) & ~pile
+    frac = {n: float((cls == i).mean()) for i, n in enumerate(CLASSES)}
+    pile_frac = float(pile[cls == 1].mean()) if (cls == 1).any() else np.nan
+    fits = {n: fit_photopeak(v[sel]) for n, v in est.items()}
+    # average pulse of the REAL events without pile-up, aligned on the maximum
+    centre = 300
+    acc = np.zeros(ns); cnt = np.zeros(ns)
+    for e in np.flatnonzero(sel):
+        sh = centre - imax[e]
+        lo, hi = max(0, sh), min(ns, ns + sh)
+        acc[lo:hi] += S_all[e, lo - sh:hi - sh]; cnt[lo:hi] += 1
+    pulse = np.where(cnt > 0.5 * sel.sum(), acc / np.maximum(cnt, 1), np.nan)
+    tp = (np.arange(ns) - centre) * dt
+    ok = np.isfinite(pulse)
+    dec = fit_decay(tp[ok], pulse[ok], t0d, t1d)
+
+    # ---- text ------------------------------------------------------------------------------
+    T3 = float(A["T3"]) if "T3" in A else np.nan
+    print(f"{path.name}: run {run}, {nev} events, T3 {T3:.1f} K, bias {float(A['V_bias']):g} V; "
+          f"window {a_ns:g}/{b_ns:g} ns (pass {win_pass[0]:g}/{win_pass[1]:g}), charge noise sigma_Q {sigma_Q:.4g} ADC ns; "
+          f"q_pe {q_pe:.4g} ADC ns from A1 {a1:.2f} (gain table {args.gain.split('/')[-1]})")
+    print(f"  classes: " + ", ".join(f"{n} {100 * frac[n]:.1f}%" for n in CLASSES)
+          + f"; pile-up in REAL {100 * pile_frac:.1f}%; {sel.sum()} REAL without pile-up used")
+    print(f"  {'estimator':10s} {'peak ADCns':>11s} {'err':>7s} {'peak PE':>8s} {'PE/keV':>7s} {'sigma':>8s} {'FWHM/peak':>9s} {'n':>6s}")
+    for n, fi in fits.items():
+        if fi["ok"]:
+            print(f"  {n:10s} {fi['mu']:11.0f} {fi['err']:7.0f} {fi['mu'] / q_pe:8.1f} {fi['mu'] / q_pe / 511:7.2f} "
+                  f"{fi['s']:8.0f} {100 * fi['fwhm_rel']:8.1f}% {fi['n']:6d}")
+        else:
+            print(f"  {n:10s} no fit ({fi['why']})")
+    print(f"  decay: tau {dec['tau'] / 1000:.3f} +- {dec['err'] / 1000:.3f} us over [{t0d / 1000:g}, {t1d / 1000:g}] us after the maximum"
+          if dec["ok"] else f"  decay: no fit ({dec['why']})")
+    if no_g:
+        print(f"  live channels without equalization factor (g = 1): {no_g}")
+
+    # ---- output files --------------------------------------------------------------------
+    out = args.out or str(path.parent / f"{run}_offline.h5")
+    with h5py.File(out, "w") as f:
+        for name, arr in (("index", index), ("cls", cls.astype(np.int8)), ("pileup", pile), ("dt_pile", dt_pile.astype(np.float32)),
+                          ("t_max", t[imax].astype(np.float32)), ("H", H.astype(np.float32)),
+                          ("t_rise", np.where(irise >= 0, t[np.maximum(irise, 0)], np.nan).astype(np.float32)),
+                          ("Q", Q.astype(np.float32)), ("Q_ctrl", Qc.astype(np.float32)), ("mult", mult.astype(np.int16))):
+            f[name] = arr
+        for n in ESTIMATORS[1:]:
+            f[n] = est[n].astype(np.float32)
+        f["pulse"] = pulse.astype(np.float32); f["pulse_t"] = tp.astype(np.float32)
+        f.attrs.update(dict(run=run, pass_file=str(path), gain_file=str(args.gain), window_ns=[a_ns, b_ns], smooth=args.smooth,
+                            nsigma=args.nsigma, k=args.k, dead=sorted(dead), decay_range_us=[t0d / 1000, t1d / 1000],
+                            sigma_Q=sigma_Q, q_pe=q_pe))
+    summary = dict(run=run, nev=int(nev), T1=float(A.get("T1", np.nan)), T2=float(A.get("T2", np.nan)), T3=T3,
+                   V_bias=float(A["V_bias"]), thr_adc=int(A["thr_adc"]), trigger_rate_hz=float(A["trigger_rate_hz"]),
+                   window_ns=[a_ns, b_ns], pass_window_ns=list(win_pass), nsigma=args.nsigma, k=args.k,
+                   sigma_Q=float(sigma_Q), q_pe=float(q_pe), A1=float(a1), classes=frac, pileup_frac=pile_frac,
+                   n_used=int(sel.sum()), decay_us=dec["tau"] / 1000 if dec["ok"] else None,
+                   decay_err_us=dec["err"] / 1000 if dec["ok"] else None, decay_range_us=[t0d / 1000, t1d / 1000],
+                   no_gain=no_g,
+                   estimators={n: dict(mu=fi["mu"], err=fi["err"], s=fi["s"], fwhm_rel=fi["fwhm_rel"], n=fi["n"], ok=fi["ok"])
+                               for n, fi in fits.items()})
+    with open(out.replace("_offline.h5", "_offline.json"), "w") as fo:
+        json.dump(summary, fo, indent=1, default=float)
+    print(f"  written {out} and {out.replace('_offline.h5', '_offline.json')}")
+
+    # ---- figures ---------------------------------------------------------------------------
+    figs = {}
+    fig, axs = plt.subplots(2, 4, figsize=(16, 7.5))
+    for ax, (n, fi) in zip(axs.flat, fits.items()):
+        if fi["h"] is not None:
+            ax.stairs(fi["h"], fi["edges"], color="C0", fill=True, alpha=0.6)
+            if fi["ok"]:
+                x = np.linspace(fi["lo"], fi["hi"], 200)
+                ax.plot(x, peak_bg(x, *fi["p"]), color="C3", lw=1.3,
+                        label=f"peak {fi['mu']:.3g}, FWHM {100 * fi['fwhm_rel']:.1f}%")
+                ax.legend(fontsize=7)
+        ax.set(title=n, xlabel="ADC ns", ylabel="events")
+        ax.title.set_fontsize(9)
+        ax.grid(lw=0.3)
+    axs.flat[-1].axis("off")
+    fig.suptitle(f"{run}: charge spectra of the REAL events without pile-up ({sel.sum()})", x=0.01, ha="left")
+    fig.tight_layout(); figs["spectra"] = fig
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    top = np.percentile(Q, 99.5)
+    for i, n in enumerate(CLASSES):
+        if (cls == i).any():
+            ax.hist(Q[cls == i], bins=200, range=(0, top), histtype="step", lw=1.2, label=f"{n} ({100 * frac[n]:.1f}%)")
+    ax.hist(Q[(cls == 1) & pile], bins=200, range=(0, top), histtype="step", lw=1.0, ls="--", label=f"REAL with pile-up ({100 * pile_frac:.1f}% of REAL)")
+    ax.set(xlabel="Q (ADC ns)", ylabel="events", title=f"{run}: Q of the sum by class")
+    ax.title.set_fontsize(10); ax.grid(lw=0.3); ax.legend(fontsize=8)
+    fig.tight_layout(); figs["classes"] = fig
+
+    fig, axs = plt.subplots(1, 2, figsize=(12, 4.2))
+    for ax, yscale in zip(axs, ("linear", "log")):
+        ax.plot(tp[ok] / 1000, pulse[ok], color="C0", lw=0.8, label=f"mean of {sel.sum()} REAL events")
+        if dec["ok"]:
+            s2 = dec["sel"]
+            ax.plot(tp[ok][s2] / 1000, decay(tp[ok][s2] - t0d, dec["A"], dec["tau"], dec["C"]), color="C3", lw=1.5,
+                    label=f"tau {dec['tau'] / 1000:.3f} +- {dec['err'] / 1000:.3f} us")
+        ax.set(xlabel="us from the maximum", ylabel="sum (ADC)", yscale=yscale)
+        if yscale == "log":
+            ax.set_ylim(max(1.0, np.nanmin(pulse[ok][pulse[ok] > 0]) if (pulse[ok] > 0).any() else 1.0), None)
+        ax.grid(lw=0.3); ax.legend(fontsize=8)
+    fig.suptitle(f"{run}: average pulse and decay fit", x=0.01, ha="left")
+    fig.tight_layout(); figs["pulse"] = fig
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    if pile.any():
+        ax.hist(dt_pile[pile] / 1000, bins=60, color="C0", alpha=0.7)
+    ax.axvspan(-a_ns / 1000, b_ns / 1000, color="0.5", alpha=0.15, lw=0, label="charge window")
+    ax.set(xlabel="time of the second maximum minus t_max (us)", ylabel="events", title=f"{run}: pile-up, {int(pile.sum())} events")
+    ax.title.set_fontsize(10); ax.grid(lw=0.3); ax.legend(fontsize=8)
+    fig.tight_layout(); figs["pileup"] = fig
+
+    if args.save:
+        PLOTS.mkdir(exist_ok=True)
+        for tag, fg in figs.items():
+            fg.savefig(PLOTS / f"{args.save}_{tag}.png", dpi=130)
+        print(f"  figures saved as {PLOTS}/{args.save}_{{spectra,classes,pulse,pileup}}.png")
+    else:
+        plt.show()
+
+
+if __name__ == "__main__":
+    main()

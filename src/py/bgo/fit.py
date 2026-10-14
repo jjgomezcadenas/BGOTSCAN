@@ -1,6 +1,8 @@
-"""bgo.fit: the single-photoelectron peak fit (docs/manual/spe_doc.tex, step 6)."""
+"""bgo.fit: the single-photoelectron peak fit (docs/manual/spe_doc.tex, step 6), the photopeak fit
+and the decay fit (docs/manual/offline_doc.tex)."""
 import numpy as np
 from scipy.optimize import curve_fit
+from scipy.special import erfc
 
 ABIN, AMAX = 1.0, 80.0             # histogram of the filtered amplitude A (ADC)
 
@@ -58,3 +60,77 @@ def crosstalk_ratio(values, m):
     v = np.asarray(values)
     low = np.sum(v < 1.5 * m)
     return np.sum((v >= 1.5 * m) & (v < 2.5 * m)) / low if low else float("nan")
+
+
+# ---- photopeak and decay (docs/manual/offline_doc.tex) ---------------------------------
+def peak_bg(x, n, mu, s, c0, c1):
+    """Gaussian on a Compton step (erfc) and a constant."""
+    return n * np.exp(-0.5 * ((x - mu) / s) ** 2) + 0.5 * c0 * erfc((x - mu) / (s * np.sqrt(2))) + c1
+
+
+def find_photopeak(h, c, frac=0.25, nsm=5):
+    """Rightmost local maximum of the smoothed histogram above `frac` of its maximum; bin centre."""
+    hs = np.convolve(h, np.ones(nsm) / nsm, mode="same")
+    i = np.arange(1, len(hs) - 1)
+    loc = i[(hs[i] >= hs[i - 1]) & (hs[i] > hs[i + 1]) & (hs[i] > frac * hs.max())]
+    return c[loc[-1]] if len(loc) else c[int(hs.argmax())]
+
+
+def fit_photopeak(values, nbins=200, frac=0.25, nsig=2.5):
+    """Histogram of `values` (0 to the 99.5th percentile), photopeak located and fitted twice with
+    peak_bg over mu +- nsig s. Returns dict(mu, err, s, fwhm_rel, n, ok, why, h, edges, lo, hi, p)."""
+    v = np.asarray(values, float)
+    v = v[np.isfinite(v)]
+    out = dict(mu=np.nan, err=np.nan, s=np.nan, fwhm_rel=np.nan, n=len(v), ok=False, why="", h=None,
+               edges=None, lo=np.nan, hi=np.nan, p=None)
+    if len(v) < 100:
+        out["why"] = "fewer than 100 events"
+        return out
+    top = np.percentile(v, 99.5)
+    h, edges = np.histogram(v, bins=nbins, range=(0, top))
+    c = 0.5 * (edges[1:] + edges[:-1])
+    out.update(h=h, edges=edges)
+    mu = find_photopeak(h, c, frac)
+    s = 0.08 * mu
+    p = None
+    for _ in range(2):
+        sel = (c > mu - nsig * s) & (c < mu + nsig * s)
+        if sel.sum() < 6:
+            out["why"] = "fit range too narrow"
+            return out
+        k = int(np.clip(np.searchsorted(c, mu), 0, len(h) - 1))
+        p0 = (max(h[k], 1.0), mu, s, max(h[sel][0] - h[sel][-1], 0.0), max(h[sel][-1], 0.0))
+        try:
+            p, cov = curve_fit(peak_bg, c[sel], h[sel], p0=p0,
+                               bounds=([0, mu - nsig * s, 0.2 * s, 0, 0], [np.inf, mu + nsig * s, 3 * s, np.inf, np.inf]),
+                               sigma=np.sqrt(np.maximum(h[sel], 1.0)), absolute_sigma=True, maxfev=20000)
+        except RuntimeError:
+            out["why"] = "fit did not converge"
+            return out
+        mu, s = p[1], abs(p[2])
+    out.update(mu=float(mu), err=float(np.sqrt(cov[1, 1])), s=float(s), fwhm_rel=float(2.355 * s / mu),
+               lo=float(mu - nsig * s), hi=float(mu + nsig * s), p=p, ok=True)
+    return out
+
+
+def decay(t, A, tau, C):
+    return A * np.exp(-t / tau) + C
+
+
+def fit_decay(t, y, t0, t1):
+    """Single exponential A exp(-t/tau) + C fitted to y(t) for t0 <= t <= t1 (same units as t).
+    Returns dict(tau, err, A, C, ok, why, sel)."""
+    sel = (t >= t0) & (t <= t1)
+    out = dict(tau=np.nan, err=np.nan, A=np.nan, C=np.nan, ok=False, why="", sel=sel)
+    if sel.sum() < 10:
+        out["why"] = "fewer than 10 samples in the range"
+        return out
+    tt, yy = t[sel] - t0, y[sel]
+    try:
+        p, cov = curve_fit(decay, tt, yy, p0=(max(yy[0], 1.0), 0.3 * (t1 - t0), 0.0),
+                           bounds=([0, 1e-3 * (t1 - t0), -np.inf], [np.inf, 100 * (t1 - t0), np.inf]), maxfev=20000)
+    except RuntimeError:
+        out["why"] = "fit did not converge"
+        return out
+    out.update(tau=float(p[1]), err=float(np.sqrt(cov[1, 1])), A=float(p[0]), C=float(p[2]), ok=True)
+    return out

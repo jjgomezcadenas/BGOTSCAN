@@ -1,0 +1,168 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{offline.py}: the analysis of one run from the output of the pass}
+\author{BGOTSCAN}
+\date{2026-10-14}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+The pass of \code{JScan} (\code{jscan\_doc.tex}) reads a run once and
+writes, per event, the corrected summed waveform, the charge and time of
+every channel in a window, and the single-photoelectron candidates.
+\code{offline.py} does the analysis of one run from that file: it
+classifies the events, computes the charge of each event in seven ways,
+fits the 511~keV photopeak of each, fits the decay of the average pulse,
+and writes a per-event table and a summary for the comparison across runs
+(\code{scan.py}). It reads only the pass output and the equalization table,
+runs in seconds, and is a batch script: no steps, one table on the
+terminal, four figures. The definitions of the classes and of the charges
+are those of \code{selection\_doc.tex} (steps 6 to 12); this document
+gives what is new: the charge noise from the data, the equalized charges,
+the photopeak and decay fits, the output.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/offline.py RUN|FILE [--window A,B] [--smooth 64] [--nsigma 5] [--k 3]
+        [--gain FILE] [--dead LIST] [--decay-range A,B] [--save NAME] [--out FILE]
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{l l p{72mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{RUN|FILE} & & a run name, looked up as \code{pass/RUN\_pass.h5}, or a path \\
+\code{--window A,B} & the window of the pass & charge window of the sum: ns before and after the maximum. Set per temperature from the average pulse; the per-channel charges keep the window of the pass \\
+\code{--smooth N} & 64 & moving-average width of the pulse search (samples) \\
+\code{--nsigma K} & 5 & significance of the charge cut, the pile-up search and the multiplicity \\
+\code{--k k} & 3 & zero-suppression threshold of $Q_{\rm kept}$ \\
+\code{--gain FILE} & \code{src/spe\_gain\_195K\_41V\_th20.csv} & equalization table of \code{spefit.py}; channels without a factor get 1 and are listed \\
+\code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & channels excluded from every per-channel charge \\
+\code{--decay-range A,B} & \code{0.5,4} & \us{} after the maximum over which the exponential is fitted to the average pulse; set per temperature \\
+\code{--save NAME} & off & figures saved as \code{src/py/plots/NAME\_classes.png}, \code{NAME\_spectra.png}, \code{NAME\_pulse.png}, \code{NAME\_pileup.png}; otherwise shown \\
+\code{--out FILE} & \code{pass/RUN\_offline.h5} & per-event table; the summary goes next to it as \code{RUN\_offline.json} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Per event}
+
+$S_i$ is the stored summed waveform divided by its scale; $\Delta t$ = 8~ns;
+$a$, $b$ the window in samples from \code{--window}.
+
+\paragraph{Pulse and class.} $\hat S$ = moving average of $S$ over $N$
+samples; $i_{\max}$, $H$, $i_{\rm rise}$ as in \code{selection\_doc.tex}
+step~7. Charge window $[i_{\max} - a, i_{\max} + b]$ and control window
+of the same length in the pulse-free part (step~8); $Q = \Delta t \sum_{\rm
+window} S_i$, $Q_{\rm ctrl}$ the same over the control window. The charge
+noise is measured on the run: $\sigma_Q$ = rms of $Q_{\rm ctrl}$ over all
+events (clipped at three times a first rms, so that pulses in the control
+window do not inflate it); this replaces the white-noise formula of the
+prototype. $\sigma_N$ = rms of $\hat S$ over the control window, per event.
+Class: EMPTY if $Q < K\sigma_Q$; REAL if $Q \ge K\sigma_Q$ and a rising
+edge; TAIL if $Q \ge K\sigma_Q$ and no rising edge. Pile-up: the maximum
+$P_2$ of $\hat S$ outside the charge window, the valley $V$ between it and
+$i_{\max}$; flagged if $P_2 > K\sigma_N$ and $P_2 - V > K\sigma_N$
+(step~10); $\Delta t_{\rm pile}$ = time of $P_2$ minus $t_{\max}$.
+
+\paragraph{Charges from the channels.} $q_c$ and $q_c^{\rm ctrl}$ are the
+stored per-channel charges in the window of the pass. The charge noise of
+channel $c$ is $\sigma_{q,c}$ = clipped rms of $q_c^{\rm ctrl}$ over the
+events. Dead channels are removed. The equalization factor $g_c$ comes
+from the table; a live channel without one gets $g_c = 1$ and is listed in
+the output. With $L$ the live channels,
+\[
+  Q_{\rm all} = \sum_{c \in L} q_c, \qquad
+  Q_0 = \sum_{c \in L,\, q_c > 0} q_c, \qquad
+  Q_{\rm kept} = \sum_{c \in L,\, q_c > k\,\sigma_{q,c}} q_c,
+\]
+and the same three with $q_c / g_c$ in place of $q_c$ (the thresholds on
+the unequalized $q_c$, so that the two sets select the same channels):
+$Q^{\rm eq}_{\rm all}$, $Q^{\rm eq}_0$, $Q^{\rm eq}_{\rm kept}$. The
+multiplicity $M$ is the number of live channels with $q_c > K\sigma_{q,c}$.
+
+\section{Per run}
+
+\paragraph{Classes.} The fraction of EMPTY, REAL and TAIL events, the
+fraction of REAL events with pile-up, and the histogram of $\Delta t_{\rm
+pile}$ (figure \code{pileup}): a pile-up of random second pulses is flat
+in $\Delta t$; a pile of entries just outside the window would be the tail
+of the main pulse passing as a second one.
+
+\paragraph{Spectra and photopeak.} For the REAL events without pile-up,
+the histogram of each of the seven charges ($Q$ and the six from the
+channels), 200 bins from zero to the 99.5th percentile. The photopeak is
+located as the rightmost local maximum of the smoothed histogram that
+stands above 25\% of its global maximum: the 511~keV peak dominates the
+spectrum, the Compton continuum lies below it, and the 1275~keV line is
+too weak to pass. It is fitted with a Gaussian on a background,
+\[
+  f(x) = n\, e^{-(x - \mu)^2 / 2 s^2} + c_0\, \tfrac{1}{2}\operatorname{erfc}\!\big(\tfrac{x - \mu}{s\sqrt 2}\big) + c_1,
+\]
+the erfc term being the step of the Compton continuum under the peak,
+over $\mu \pm 2.5 s$, twice (the range updated after a first fit), by
+least squares with Poisson weights. Light yield of the estimator: $\mu$
+in ADC\,ns, and in photoelectrons $\mu / q_{\rm pe}$ with $q_{\rm pe} = A_1
+\sum_j T_j \Delta t$ the charge of one photoelectron, $A_1$ the median
+single-photoelectron amplitude of the gain table and $T$ the template of
+the pass; $A_1$ is measured at 41~V only, and the conversion is labelled
+with it. Resolution: $\mathrm{FWHM}/\mu = 2.355\, s / \mu$. Figure
+\code{spectra}: the seven spectra with their fits; figure \code{classes}:
+the $Q$ spectrum of each class.
+
+\paragraph{Average pulse and decay time.} The mean of $S$ over the REAL
+events without pile-up, each shifted so that its $i_{\max}$ falls on a
+common sample, over the samples all of them cover. A single exponential
+$A e^{-t/\tau} + C$ is fitted between $t_{\max} + A$ and $t_{\max} + B$
+(\code{--decay-range}); $\tau$ is the decay time of the run. Figure
+\code{pulse}: the average pulse and the fit, linear and logarithmic.
+
+\section{Output}
+
+\paragraph{Table.} One line per estimator: position (ADC\,ns and
+photoelectrons), error, width, FWHM/position, number of events in the
+fit; then the class fractions, the pile-up fraction, $\sigma_Q$, the
+decay time, and the channels without an equalization factor.
+
+\paragraph{Per-event file} \code{pass/RUN\_offline.h5}: datasets of length
+nev: \code{index}, \code{cls} (0 EMPTY, 1 REAL, 2 TAIL), \code{pileup},
+\code{dt\_pile}, \code{t\_max}, \code{H}, \code{t\_rise}, \code{Q},
+\code{Q\_ctrl}, \code{Q\_all}, \code{Q\_0}, \code{Q\_kept},
+\code{Q\_all\_eq}, \code{Q\_0\_eq}, \code{Q\_kept\_eq}, \code{mult}; the
+average pulse as \code{pulse} with its time axis; the options and the
+input files as attributes.
+
+\paragraph{Summary} \code{pass/RUN\_offline.json}: the run conditions
+copied from the pass (T1, T2, T3, bias, trigger rate), the options, the
+class fractions, $\sigma_Q$, the decay time with its error, and for each
+estimator the photopeak position, error, width and resolution. This is
+what \code{scan.py} reads.
+
+\section{Examples}
+
+\begin{lstlisting}
+# the warm run with the pass window
+python3 src/py/offline.py 195K_41V_th20 --save off195
+
+# a cold run with a long window and a long decay range
+python3 src/py/offline.py 128K_37V_th19 --window 1000,12000 --decay-range 1,10 --save off128
+\end{lstlisting}
+
+\end{document}
