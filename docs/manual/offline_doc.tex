@@ -197,6 +197,21 @@ class fractions, $\sigma_Q$, the decay time with its error, and for each
 estimator the photopeak position, error, width and resolution. This is
 what \code{scan.py} reads.
 
+\section{\code{mains.py}: is the baseline drift the power line?}
+
+\begin{lstlisting}
+python3 src/py/mains.py RUN|FILE [--freq 50] [--save NAME]
+\end{lstlisting}
+Reads the pass output: the end-of-record baseline of the sum of every
+event and the trigger time. Folds the baseline at the period of the
+mains (20~ms for 50~Hz) and fits the first three harmonics; prints the
+scatter of the baseline between events (the size of the slow drift), the
+amplitudes and the scatter left. Figure: the baseline against the phase
+with the median per phase bin, and against the time in the run. On the
+196~K bias scan (2026-10-15) no harmonic is seen, and the scatter falls
+from 47 counts at 41~V to 5.6 at 39~V, following the square root of the
+board trigger rate (\code{ANALYSIS.md}).
+
 \section{Examples}
 
 \begin{lstlisting}

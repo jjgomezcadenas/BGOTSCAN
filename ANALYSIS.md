@@ -5,6 +5,55 @@ The purpose of the analysis is to measure the relative light yield and the
 energy resolution of the BGO crystal as a function of temperature and SiPM
 overvoltage, from the 511 keV photopeak of the 22Na source.
 
+## 2026-10-15
+
+### State of the energy resolution question (handoff)
+
+- The 511 keV photopeak of 195K_41V_th20 is 45% FWHM in every charge
+  estimator (sum, all channels, positive channels, zero-suppressed,
+  equalized or not), with the photopeak fit started from the measured
+  width (a fixed 8% start had produced spurious narrow fits, including a
+  "27%" that was quoted and was wrong). Expected: 10 to 15% (840
+  photoelectrons give 9% by themselves). So something is wrong, not the
+  crystal.
+- Per SiPM (events whose largest charge is in that SiPM): the photopeak
+  position varies only +-10% across the face, but within one SiPM the
+  peak is 38% wide; and the charge rises by 50% from events with light
+  in <= 6 SiPMs to events with light in > 10 (multiplicity). An (x, y)
+  map would gain little. Far from the dead block: 31%, next to it 43%.
+- Noise: each biased channel carries a low-frequency noise (1/f-like
+  below 0.5 MHz, partly coherent among biased channels, absent in the 12
+  dead channels: figure src/py/plots/cs195w_wander.png). The per-channel
+  charge noise over the 5 us window with the end-of-record baseline is
+  2400 ADC ns (white: 700); the sum's is 66 000 (12% of the peak). Not
+  the mains: folded at 50 Hz the baseline shows no harmonic (mains.py).
+- The decisive clue: the scatter of the end-of-record baseline between
+  events falls from 47 counts at 41 V (board trigger rate 225 kHz) to
+  26, 23, 14 and 5.6 counts at 40.5, 40, 39.5 and 39 V (148, 97, 29,
+  2.7 kHz), a factor 8 while the gain changes by 1.5: it follows the
+  square root of the trigger rate. Hypothesis: every firing of the
+  trigger logic, recorded or not (about 5 per 24 us record at 41 V),
+  disturbs the biased channels, as the +-200-count excursion at t = 0
+  shows for the firing that opens the record. One event looked at (step
+  2 of selection.py, event 1 of 41 V) does not show a clear train of
+  such excursions, so the mechanism is not confirmed; the scaling is.
+- NEXT, decisive and cheap: pass of 197K_39V_th20 with the current
+  settings (dead-channel common mode; its present pass file is from the
+  interp days) and offline.py on it. If the photopeak is near 15% at
+  39 V, the noise at high trigger rate is the culprit and the cure is a
+  quieter trigger (hardware); if it stays at 45%, the width is elsewhere
+  (then: look by eye at a narrow-spot and a wide-spot event, channel by
+  channel, to see whether the 50% multiplicity effect is in the crystal
+  or in our per-channel charge).
+- Tried and discarded today (kept out of the code or as non-default
+  options): "unlit channels" common mode (leaks a third of the charge),
+  local baselines of the sum (post-pulse, line; the pre-trigger samples
+  hold the trigger excursion, the record start holds the pulse rise of
+  late triggers), per-channel line baseline in the pass (option
+  --chbase line, worse), Q_kept at 3 sigma (loses variable light, 60%).
+- Working rule adopted after today: one hypothesis, one test, the
+  user's OK, one result; no chained trials.
+
 ## 2026-10-14
 
 ### Setup and data
