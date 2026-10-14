@@ -2,7 +2,10 @@
 
 Analysis of the BGO temperature scan of 2026-10-02: a BGO crystal read out by
 64 SiPMs, held in a cryostat at temperatures between 128 K and 197 K, with the
-SiPM bias voltage changed with temperature (and scanned at 185 K and 196 K).
+SiPM bias voltage changed with temperature (and scanned at 185 K and 196 K),
+irradiated by a 22Na source at a fixed position. The goal is the relative
+light yield and the energy resolution at 511 keV as a function of temperature
+and overvoltage. Findings and decisions are logged in `ANALYSIS.md`.
 
 ## Data
 
@@ -41,6 +44,7 @@ The file layout (datasets and attributes) is documented in
   (`jscan_doc.tex`, `wfview_doc.tex`, `runinfo_doc.tex`,
   `selection_doc.tex`); the figures they include are in `docs/figs/`.
 - `nb/`: notebooks received from the authors, kept as received.
+- `ANALYSIS.md`: the dated log of findings, decisions and open questions.
 
 ## Setup
 
