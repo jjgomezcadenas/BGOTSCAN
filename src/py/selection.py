@@ -22,27 +22,30 @@ from wfview import DATA, PLOTS, find_run, parse_events, smooth
 WRAP = 2 ** 24
 CM_METHODS = ("median", "interp", "none")     # not the mean: it makes the sum identically zero
 STEPS = ("read", "common-mode analysis", "locate the pulse (provisional)", "interpolate m across W",
-         "subtract and sum", "baseline", "pulse search", "charge", "multiplicity", "verdict")
+         "subtract and sum", "baseline", "pulse search", "charge", "multiplicity", "verdict",
+         "zero suppression: charge kept vs threshold", "zero suppression: the kept channels")
+ZS_THRESHOLDS = (0, 1, 2, 3, 5, 8)
 
 
 # ---- display ---------------------------------------------------------------------------
 class Stepper:
     """Shows one figure per step and waits on the terminal, or saves without prompting.
 
-    show() returns "next" (go on), "skip" (abandon this event) or "quit"."""
+    show() returns "next" (go on), "skip" (abandon this event), "quit", or ("k", value) when
+    ask_k is set and a number was typed."""
 
-    def __init__(self, save, run, event):
-        self.save, self.run, self.event = save, run, event
+    def __init__(self, save, run, event, names=STEPS):
+        self.save, self.run, self.event, self.names = save, run, event, names
         self.fig = None
         self.silent = False                 # True for steps before --from-step: compute only
         if not save:
             plt.ion()
 
-    def show(self, step, fig):
+    def show(self, step, fig, ask_k=False):
         if self.silent:
             plt.close(fig)
             return "next"
-        fig.suptitle(f"{self.run}: event {self.event}, step {step}: {STEPS[step - 1]}",
+        fig.suptitle(f"{self.run}: event {self.event}, step {step}: {self.names[step - 1]}",
                      x=0.01, ha="left")
         fig.tight_layout()
         if self.save:
@@ -57,7 +60,14 @@ class Stepper:
         self.fig = fig
         fig.show()
         plt.pause(0.2)
-        ans = input("  [Enter] next step, n next event, q quit: ").strip().lower()
+        if ask_k:
+            ans = input("  [Enter] next step, <number> redo with that k, n next event, q quit: ").strip().lower()
+            try:
+                return ("k", float(ans))
+            except ValueError:
+                pass
+        else:
+            ans = input("  [Enter] next step, n next event, q quit: ").strip().lower()
         return {"q": "quit", "n": "skip"}.get(ans, "next")
 
     def close(self):
@@ -346,7 +356,7 @@ def step9(ev, st, out, args):
     z = q / sq
     on = z > args.nsigma
     M = int(on.sum())
-    out.update(M=M)
+    out.update(M=M, y=y, Bc=Bc, q=q, sq=sq, z=z)
     print(f"step 9: per-channel charge noise {sq:.4g} ADC ns from the control window (white-noise "
           f"expectation {swhite:.4g}); multiplicity {M} channels above {args.nsigma:g} sigma, their charge "
           f"{q[on].sum():.4g} vs Q {out['Q']:.4g}; channels: {[int(c) for c in chans[on]]}")
@@ -372,6 +382,78 @@ def step10(ev, st, out, args):
           f"({P2 / sN:.1f} x smoothed control rms), valley between the maxima {valley:.1f} ADC, "
           f"prominence {P2 - valley:.1f} ({(P2 - valley) / sN:.1f} x)")
     return "next"
+
+
+def kept_summary(out, k):
+    """Channels kept at threshold k, their charge and the fraction of the total."""
+    on = out["z"] > k
+    Qall = out["q"].sum()
+    Qk = out["q"][on].sum()
+    return on, Qk, (Qk / Qall if Qall else float("nan"))
+
+
+def step11(ev, st, out, args):
+    q, z, chans = out["q"], out["z"], ev["channels"]
+    Qall = q.sum()
+    print(f"step 11: zero suppression keeps channel c if q_c / sigma_q > k; Q_all = sum over 64 channels "
+          f"{Qall:.4g} ADC ns; per threshold k: channels kept, Q_kept, fraction kept")
+    for k in ZS_THRESHOLDS:
+        on, Qk, frac = kept_summary(out, k)
+        print(f"        k = {k:3d}   kept {int(on.sum()):2d}   Q_kept {Qk:12.4g}   fraction {frac:6.3f}")
+    order = np.argsort(z)[::-1]
+    rank = np.arange(1, len(z) + 1)
+    cum = np.cumsum(q[order]) / Qall if Qall else np.zeros(len(z))
+    fig, axs = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
+    axs[0].bar(rank, z[order], color="C0", width=0.8)
+    for k in ZS_THRESHOLDS[1:]:
+        axs[0].axhline(k, color="0.5", lw=0.6, ls=":")
+        axs[0].text(len(z) + 0.5, k, f"k={k}", fontsize=7, va="center", color="0.4")
+    axs[0].set_ylabel("charge significance z_c")
+    axs[1].plot(rank, cum, "o-", color="C0", ms=3, lw=1)
+    axs[1].axhline(1, color="0.5", lw=0.6, ls=":")
+    axs[1].set(ylabel="cumulative fraction of Q_all", xlabel="channel rank (sorted by decreasing z_c)")
+    for ax in axs:
+        ax.grid(lw=0.3)
+    return st.show(11, fig)
+
+
+def step12(ev, st, out, args):
+    x, t, chans, y, Bc, cwin = ev["x"], ev["t"], ev["channels"], out["y"], out["Bc"], out["cwin"]
+    full = (y - Bc[:, None]).sum(axis=0)
+    k = args.zs
+    while True:
+        on, Qk, frac = kept_summary(out, k)
+        kept = (y[on] - Bc[on][:, None]).sum(axis=0) if on.any() else np.zeros_like(full)
+        print(f"step 12: k = {k:g}: {int(on.sum())} channels kept {[int(c) for c in chans[on]]}; "
+              f"Q_kept/Q_all {frac:.3f}; control rms of the kept sum {rms(kept[cwin]):.1f} ADC "
+              f"vs full sum {rms(full[cwin]):.1f}")
+        fig = plt.figure(figsize=(14, 12))
+        gs = fig.add_gridspec(9, 8, height_ratios=[1] * 8 + [2.2])
+        axes = []
+        for c in range(64):
+            ax = fig.add_subplot(gs[c // 8, c % 8], sharex=axes[0] if axes else None,
+                                 sharey=axes[0] if axes else None)
+            axes.append(ax)
+            row = np.flatnonzero(chans == c)
+            if len(row) and on[row[0]]:
+                ax.plot(t, y[row[0]] - Bc[row[0]], color="C0", lw=0.5)
+            ax.axvline(0, color="0.4", ls="--", lw=0.5)
+            ax.text(0.03, 0.85, str(c), transform=ax.transAxes, fontsize=7)
+            ax.tick_params(labelsize=6)
+            ax.grid(lw=0.3)
+        ax = fig.add_subplot(gs[8, :])
+        ax.plot(t, full, color="0.6", lw=0.6, label="sum of all 64 channels")
+        ax.plot(t, kept, color="C0", lw=0.8, label=f"sum of the {int(on.sum())} kept channels (k = {k:g})")
+        ax.axvline(0, color="0.4", ls="--", lw=0.8)
+        ax.axhline(0, color="0.4", lw=0.5)
+        ax.set(xlabel="ns from trigger", ylabel="ADC")
+        ax.grid(lw=0.3)
+        ax.legend(fontsize=8, loc="upper right")
+        ans = st.show(12, fig, ask_k=True)
+        if isinstance(ans, tuple):
+            k = ans[1]
+            continue
+        return ans
 
 
 # ---- main ------------------------------------------------------------------------------
@@ -401,7 +483,8 @@ def main():
     ap.add_argument("--window", default="1000,4000", help="charge window: ns before,after the maximum")
     ap.add_argument("--nsigma", type=float, default=5.0, help="significance threshold")
     ap.add_argument("--edge", type=int, default=32, help="samples averaged at each end of W for the line")
-    ap.add_argument("--from-step", type=int, default=1, choices=range(1, 11), help="first step shown")
+    ap.add_argument("--zs", type=float, default=3.0, help="zero-suppression threshold of step 12 (sigma)")
+    ap.add_argument("--from-step", type=int, default=1, choices=range(1, 13), help="first step shown")
     ap.add_argument("--save", metavar="NAME", help="no prompts; save figures as src/py/plots/NAME_evE_sN.png")
     args = ap.parse_args()
     args.window = tuple(float(v) for v in args.window.split(","))
@@ -424,7 +507,7 @@ def main():
         out = {}
         steps = [lambda: step1(ev, st), lambda: step2(ev, st, out)] + [
             (lambda f: (lambda: f(ev, st, out, args)))(f)
-            for f in (step3, step4, step5, step6, step7, step8, step9, step10)]
+            for f in (step3, step4, step5, step6, step7, step8, step9, step10, step11, step12)]
         ans = "next"
         for k, step in enumerate(steps, start=1):
             st.silent = k < args.from_step

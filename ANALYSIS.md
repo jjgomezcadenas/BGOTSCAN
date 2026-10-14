@@ -29,6 +29,44 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   measured T3 of each run, and expect a percent-level temperature effect
   across a bias scan on the light yield. (`runinfo.py`, `temperatures.txt`.)
 
+### SiPMs, overvoltage, map and source (datasheet in `extDocs/`, Laura's answers of 2026-10-14)
+
+- Hamamatsu S14160-6050HS, 64 of them at 6 mm pitch tiling the 48 × 48 mm²
+  face of a 20 mm thick BGO crystal, Teflon wrapped. Datasheet at 25 °C:
+  breakdown 38 V, recommended overvoltage 2.7 V, coefficient 34 mV/K, gain
+  2.5e6 at 2.7 V and linear in overvoltage (about 0.9e6/V), PDE 50% at 2.7 V
+  and saturated above 3 V, crosstalk 7%.
+- Each SiPM goes through a shaper into the 50 Ω input of the digitizer
+  (details to come). This is why the single-photoelectron pulse is 24 ns
+  wide at half maximum (`template.py`), and the pulse height in counts
+  depends on the shaper gain.
+- The bias was set from the datasheet values and best guess, never from a
+  measured breakdown. Extrapolating the 34 mV/K coefficient from 298 K to
+  the crystal temperature T3, the overvoltage is 4.8, 4.9, 5.5, 5.8, 6.5 V
+  along the scan (37 to 41 V) and 4.3 and 4.4 V at the lowest bias points
+  (38.5 V at 187 K, 39 V at 197 K): no run is near breakdown, and the
+  "nominal" overvoltage rises by 35% along the scan, which the light yield
+  must be corrected for (gain, linear in overvoltage; PDE saturated). The
+  SiPMs were probably warmer than the crystal, between T3 and T2 (5 to
+  9 K above), which lowers these overvoltages by 0.2 to 0.3 V. The
+  correction is measured from the bias scans: charge versus bias at 185
+  and 196 K, straight lines in overvoltage whose zero is the breakdown
+  voltage at that temperature.
+- Temperature control: thermometers only measure; heating resistors set
+  the temperature; runs were taken in a hurry, not fully stabilised. Use
+  the measured T3 per run, with a few kelvin of uncertainty on the SiPM
+  temperature.
+- Channel map (`src/channel_map.csv`): row-major, x from -21.8 to +21.8 mm
+  along the column, y from +21.8 mm (row 0) to -21.8 mm (row 7), 6.2 mm
+  pitch inside each 4 × 4 matrix and 6.4 mm across the centre. Swapped
+  cables are possible; the co-occurrence of channels in clusters over a
+  run will test the map.
+- Source: 22Na, 3 cm from the face, centred; the whole face is
+  illuminated, so clusters should appear everywhere. Channels 48 to 55
+  (y = -15.6 mm) and 11, 12 (y = +15.6 mm) light up together in the first
+  events looked at, 31 mm apart: a map or trigger question to settle with
+  the occupancy map.
+
 ### Acquisition and trigger (`src/py/runinfo.py`, `docs/runinfo_doc.tex`)
 
 - Every run records its 5000 events in 40.7 s, 123 Hz, in bursts of 3 events
@@ -77,10 +115,46 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   charge window is separated from the first by a valley of at least 5 noise
   widths. First 40 events of 197K_39V_th20: 40 REAL, 5 of them with pile-up.
   First 20 of 128K_37V_th19: 15 REAL, 1 with pile-up, 2 TAIL, 2 EMPTY.
+- Zero suppression (`selection.py` steps 11 and 12): a channel is kept if
+  its charge is above k times the per-channel charge noise (k = 3
+  default, changeable at the prompt). In event 1 of 197K_39V_th20 nine
+  channels above 8 sigma carry 109% of the 64-channel charge; the 30
+  channels with negative charge (per-channel drift over the window) are
+  worth -30%. Q_all (64 channels), Q_0 (positive channels only, a biased
+  worst case) and Q_kept (above k) will all be computed and compared on
+  the photopeak width. The kept sum has half the noise of the full sum.
+  The full sum also shows an excursion of ±200 counts just before the
+  trigger, absent from the kept channels: pickup at the trigger time in
+  the channels without light, inside the charge window; to be looked at.
 - Not done on purpose: no fixed veto around the main pulse for the pile-up
   search (to be judged from the time-difference distribution of the pass);
   Q/Q_ctrl is not printed (a single noise sample, meaningless on one
   event).
+
+### Single photoelectron (`src/py/spe.py`, `src/py/template.py`, their docs)
+
+- There is no SPE run; dark pulses were searched in the last 10 µs of the
+  records. With 4 counts of noise per 8 ns sample and a pulse of about 15
+  counts over three samples, a single photoelectron is a 4-sigma object,
+  and a matched filter gains at most a factor 1.5.
+- At 39 V and a 12-count threshold the candidates are noise maxima: their
+  mean shape is a symmetric spike with the autocorrelation of the noise,
+  and their number (0.65 per channel per 10 µs) matches 3-sigma noise,
+  while the datasheet dark current scaled to 197 K predicts 0.06 real
+  pulses in the same window. At 20 counts only 101 candidates in 300
+  events.
+- At 41 V and 20 counts, 1566 candidates in 300 events with a real pulse
+  shape (rise over two samples, 24 ns at half maximum, tail to 50 ns),
+  but sitting on an elevated, fluctuating level: at 6.5 V overvoltage
+  the channels are busy with dark pulses, crosstalk and afterpulses.
+- The refinement step of template.py (re-alignment on the filtered
+  maximum) broadens the template by the alignment jitter; the first
+  template, aligned on the raw maximum, is sharpened by the selection
+  bias; the truth is in between. To be fixed or dropped.
+- Conclusion for now: the gain per run comes from the bias scans, not
+  from SPE spectra; the SPE needs a dark run with long records at high
+  bias, or a lower-noise chain. The pulse shape at 41 V is kept as the
+  template for a matched filter if one is needed.
 
 ### Consequences for the light yield
 
@@ -95,6 +169,21 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
 - Decay time versus temperature needs only the pulse shape and is safe as
   long as the pulse is visible.
 
+### Output of the pass (decided 2026-10-14)
+
+One HDF5 file per run, written by Julia, read by Python: `events` (event
+index, trigger id, timestamp, t_max, charge window bounds, baseline,
+per-channel charge noise), `sum` (the corrected summed waveform per event,
+3000 samples, float16: 30 MB per run), `qc` and `tc` (charge and time of
+the maximum of every one of the 64 channels in the window, float32), and
+metadata (run conditions, trigger rate, selection parameters, version).
+Everything else (Q, Q_ctrl, rising edge, verdict, pile-up, Q_all, Q_0,
+Q_kept, multiplicity, clusters, barycentre, average pulses, decay fits) is
+computed offline in Python from these. Per-channel waveforms are not
+written. The per-event decay fit is a second pass on `sum`, once the model
+is chosen on the average pulse. Clustering: seed above 5 sigma, neighbours
+on the map above 3 sigma, several clusters allowed (Compton).
+
 ### Next
 
 - The first JScan pass over whole runs, with the definitions of
@@ -108,18 +197,16 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
 
 ### Open questions for Laura
 
-1. SiPM model, breakdown voltage at room temperature, and the rule used to
-   set the bias at each temperature (nominal overvoltage).
-2. Channel map: which channel number sits where on the readout face.
-3. Trigger: the coincidence window of the majority-2 logic, and whether the
-   board trigger rate was seen during the runs.
-4. Readout: was the saturation at 123 Hz known; can the throughput be raised
-   or the trigger made more selective (threshold, majority, hardware sum).
-5. Temperature control: which thermometer the controller regulates on, and
-   the waiting time after a setpoint before the runs.
-6. Next data: longer pre-trigger and record at LN2 (pulse longer than the
-   4 µs window at 128 K; trigger later than 1.6 µs after the pulse start).
-7. A dark run without the source at one or two temperatures, for the
-   dark-count rate per channel and a clean SPE amplitude.
+1. Readout chain details: the shaper (type, gain, shaping time) and the
+   50 Ω input; it sets what a single photoelectron looks like.
+2. Trigger: the coincidence window of the majority-2 logic.
+3. Later, when the analysis says what is needed: next data (a longer
+   pre-trigger and record at the cold end, a dark run with long records at
+   high bias for the SPE, stabilised temperatures).
 
-Answered: the source is 22Na at a fixed position (2026-10-14).
+Answered 2026-10-14: source (22Na, 3 cm, centred, Teflon wrapping); SiPM
+model and bias rule (datasheet and best guess, no measured breakdown; SiPMs
+probably warmer than the crystal); channel map (as in src/channel_map.csv,
+swapped cables possible); temperature control (resistors, thermometers
+only measure, not fully stabilised); trigger logic (majority 2); readout
+saturation was not known.

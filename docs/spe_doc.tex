@@ -1,0 +1,197 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{spe.py}: single-photoelectron pulses in the channels, step by step}
+\author{BGOTSCAN}
+\date{2026-10-14}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+The SiPMs (Hamamatsu S14160-6050HS, read out passively into the 100~$\Omega$
+input of the digitizer) produce dark pulses of one photoelectron at tens of
+kHz per channel, visible in the records as isolated pulses of about 15
+counts lasting 100 to 200~ns. Their amplitude, or better their charge, is
+the gain of the channel in that run. It is needed to equalize the 64
+channels before summing, to convert the light yield to photoelectrons, and,
+through its dependence on bias, to measure the breakdown voltage at each
+temperature. There is no dedicated SPE run, so the pulses are taken from the
+pulse-free part of the scintillation records.
+
+This script is the prototype of the SPE pass of \code{JScan}: it processes
+one event at a time, in six steps, printing the numbers of each step and
+showing one figure, so that the threshold, the smoothing and the charge
+window can be judged on real pulses before they are frozen. The
+definitions below are the ones the pass will implement. It is a Python
+script in \code{src/py/}, reading the raw HDF5 files with h5py, and it
+reuses the run lookup and the moving average of \code{wfview.py}.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/spe.py RUN [options]
+\end{lstlisting}
+
+Interactive: after each step the script waits on the terminal; Enter goes
+to the next step, \code{n} abandons the event and starts the next one,
+\code{q} quits.
+
+\begin{center}
+\begin{tabular}{l l p{76mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{--data DIR} & the data directory & as in \code{wfview.py} \\
+\code{--events SPEC} & \code{0} & events to process: \code{a-b} or \code{a,b,c}, 0-based \\
+\code{--channel C} & 0 & the channel shown in steps 1 to 3 and in the single-channel spectra of step~6 \\
+\code{--region R} & \code{tail} & search region: \code{tail}, the last \code{--tail} \us{} of the record, or \code{all}, the whole record \\
+\code{--tail T} & 10 & length of the tail region in \us \\
+\code{--smooth N} & 3 & moving-average width of the candidate search, in samples \\
+\code{--threshold A} & 10 & candidate threshold on the smoothed waveform, in ADC counts \\
+\code{--window A,B} & \code{40,200} & charge window: from $A$~ns before to $B$~ns after the maximum \\
+\code{--from-step N} & 1 & start the display at this step (earlier steps are computed silently) \\
+\code{--save NAME} & off & no prompts; figures saved as \code{src/py/plots/NAME\_evE\_sN.png} \\
+\code{--summary} & off & no prompts and no per-event figures; only the final step~6 text and figure, saved as \code{NAME\_spe.png} if \code{--save} is given \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Notation}
+
+$w_{c,i}$ is the raw ADC value of channel $c$ at sample $i$ ($i = 0 \dots
+n_s - 1$, $n_s = 3000$, $\Delta t = 8$~ns); $t_i = (i -
+\code{pretrigger})\,\Delta t$ as in \code{wfview}. No common-mode
+subtraction is applied: the common mode is below one count and the pulses
+are fifteen.
+
+\section{The steps}
+
+\subsection{Step 1: read the channel}
+
+The channel waveform minus its own baseline, $x_i = w_{c,i} - b_c$, with
+$b_c$ the median of $w_c$ over the record. The search region $R$ is the
+set of samples where no scintillation light is expected: with
+\code{tail}, the last $T$~\us{} of the record (the pulse is near the
+trigger and over well before, except in pile-up events, which are a small
+contamination); with \code{all}, every sample (only meaningful for records
+without scintillation light).
+
+Text: $b_c$, the rms of $x$ over the record, the region in ns and samples.
+Figure: $x$ over the record with $R$ shaded.
+
+\subsection{Step 2: smooth and find candidates}
+
+$\hat x$ is the moving average of $x$ of width $N$ (\code{--smooth},
+default 3 samples, 24~ns: enough to take the single-sample noise down
+without flattening a pulse of 100~ns). A candidate is a local maximum of
+$\hat x$ inside $R$ with $\hat x > A_{\rm thr}$ (\code{--threshold}, 10
+counts, 2.5 times the noise). Isolation: candidates are taken in
+decreasing order of $\hat x$, and a candidate closer than the charge
+window length ($A + B$) to one already taken is dropped, so that two
+overlapping pulses are not counted twice and the charge of one does not
+include the other.
+
+Text: the number of candidates, their times and smoothed heights. Figure:
+$x$ and $\hat x$ over $R$, the threshold line, the candidates marked.
+
+\subsection{Step 3: amplitude and charge}
+
+For each candidate at sample $i_0$: the amplitude $A$ is the maximum of
+the raw $x$ within $\pm N$ samples of $i_0$, at sample $i_A$; the charge
+is
+\[
+  q = \Delta t \sum_{i = i_A - a}^{i_A + b} x_i \quad (\text{ADC}\cdot\text{ns}),
+  \qquad a = A_{\rm ns}/\Delta t,\; b = B_{\rm ns}/\Delta t,
+\]
+with the window of \code{--window} (40~ns before, 200~ns after). The
+charge is the better estimator of the single photoelectron: the amplitude
+is one sample, 15 counts against 4 of noise; the charge integrates about
+12 effective samples of signal against noise growing as the square root
+of the 30 samples of the window.
+
+Text: one line per candidate: time, $A$, $q$, $q/A$. Figure: up to six
+candidates zoomed, one panel each, with the charge window shaded and
+$i_A$ marked.
+
+\subsection{Step 4: all 64 channels}
+
+Steps 1 to 3 applied to every channel. Text: the number of candidates per
+channel as an $8\times8$ table in channel order, the total and the mean
+per channel. Figure: the $8\times8$ grid of the channels over $R$ with
+their candidates marked.
+
+\subsection{Step 5: rates}
+
+The dark rate of channel $c$ in this event is $n_c / T_R$, with $n_c$ its
+number of candidates and $T_R$ the length of $R$ in seconds. Over one
+event this is a Poisson count of a few; the map over many events is the
+dark-count map of the run. Text: the mean rate and the channels more than
+three standard deviations from it. Figure: the $8\times8$ map of $n_c /
+T_R$.
+
+\subsection{Step 6: accumulated spectra}
+
+Histograms of $q$ and of $A$ over all events processed so far, for the
+selected channel and for all channels together. The expected shape: a
+peak at the single-photoelectron charge $q_1$, a smaller peak near $2
+q_1$ from the pulses with a crosstalk partner (7\% on the datasheet), and
+a tail from pulses that overlapped. The threshold removes the low side of
+the first peak and must sit well below it, which is what this figure
+checks. The estimate of $q_1$ is the mode of the $q$ histogram (and of
+$A$ for $A_1$); the crosstalk check is the number of pulses between
+$1.5\,q_1$ and $2.5\,q_1$ divided by the number below $1.5\,q_1$.
+
+Text: the number of pulses, the modes, the crosstalk ratio, for the
+channel and for all channels. Figure: the four histograms with the modes
+marked.
+
+\section{Modes}
+
+Interactive, as \code{selection.py}: one prompt per step. With
+\code{--from-step 6} steps 1 to 5 are silent and there is one prompt per
+event, showing the growing spectra. With \code{--save NAME} there are no
+prompts and every figure is saved. With \code{--summary} nothing is shown
+or prompted per event; after the last event the step~6 text is printed
+and its figure shown, or saved as \code{NAME\_spe.png} with \code{--save}.
+This is the mode for a few hundred events.
+
+\section{What the pass will do with it}
+
+The SPE pass of \code{JScan} applies steps 1 to 3 to every channel of
+every event and writes one row per candidate (event, channel, time, $A$,
+$q$). The offline analysis then histograms $q$ per channel and per run,
+takes $q_1$ as the gain, derives the equalization constants $g_c = q_1(c)
+/ \langle q_1 \rangle$ for the selection pass, the gain versus bias at
+185 and 196~K (a straight line in overvoltage whose zero is the breakdown
+voltage), the gain versus temperature along the scan, and the dark-count
+rate per channel. Not in this script: fitting the peaks, a search region
+defined from the pulse of the sum, and any output file.
+
+\section{Examples}
+
+\begin{lstlisting}
+# walk through event 0, channel 0, of the warm low-bias run
+python3 src/py/spe.py 197K_39V_th20
+
+# channel 48 of the cold run, three events
+python3 src/py/spe.py 128K_37V_th19 --channel 48 --events 0-2
+
+# spectra over 200 events, no prompts, figure saved to src/py/plots/spe197_spe.png
+python3 src/py/spe.py 197K_39V_th20 --events 0-199 --summary --save spe197
+\end{lstlisting}
+
+\end{document}

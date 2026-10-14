@@ -27,7 +27,7 @@ pulse (see \code{runinfo\_doc.tex}); of the real events, some have their
 pulse start before the record because the trigger fired late. The
 selection must find the pulse, measure its charge, and classify the event
 as empty, real, tail or pile-up. This script is the prototype of that
-selection: it processes one event at a time, in ten steps, and at each
+selection: it processes one event at a time, in twelve steps, and at each
 step prints the numbers it computed and shows one figure, so that every
 definition can be judged on real events before it is frozen in the Julia
 pass (\code{JScan}). The definitions below are the ones the pass will
@@ -46,7 +46,8 @@ python3 src/py/selection.py RUN [options]
 Interactive: after each step the script waits on the terminal; Enter goes
 to the next step, \code{n} abandons the event and starts the next one (for
 instance once a maximum at the first sample has shown the event to be a
-tail), \code{q} quits. The figure of the step stays open until
+tail), \code{q} quits. At step~12 a number typed at the prompt redoes the
+step with that zero-suppression threshold. The figure of the step stays open until
 the next one. With \code{--save} there is no prompt: all steps run and
 every figure is saved.
 
@@ -64,6 +65,7 @@ option & default & meaning \\
 \code{--smooth N} & 64 & moving-average width of the pulse search, in samples \\
 \code{--window A,B} & \code{1000,4000} & charge window: from $A$~ns before to $B$~ns after the smoothed maximum \\
 \code{--nsigma K} & 5 & significance threshold used by the charge cut, the multiplicity and the pile-up search \\
+\code{--zs k} & 3 & zero-suppression threshold of step~12, in units of the per-channel charge noise; can be changed at the prompt of that step \\
 \code{--from-step N} & 1 & start at this step (earlier steps are computed silently) \\
 \code{--save NAME} & off & no prompts; figures saved as \code{src/py/plots/NAME\_evE\_sN.png} \\
 \bottomrule
@@ -251,6 +253,35 @@ Text only: the verdict with the numbers it rests on ($Q/\sigma_Q$, the
 rising edge, $M$, $P_2$ and its position, $V$, the prominence $P_2 - V$),
 one line. Then the next event.
 
+\subsection{Step 11: zero suppression, charge kept versus threshold}
+
+Writing the 64 corrected waveforms of every event would quadruple the data
+volume, while the light of an event sits in a dozen channels. Zero
+suppression keeps, event by event, the channels whose charge is
+significant: with $q_c$ and $\sigma_q$ from step~9, channel $c$ is kept if
+$z_c = q_c/\sigma_q > k$. The cost is the charge of the dropped channels.
+With $Q_{\rm all} = \sum_c q_c$ over the 64 channels and $Q_{\rm kept}(k)$
+the sum over the kept ones, the fraction kept is $Q_{\rm kept}/Q_{\rm
+all}$. Dropped channels carry small charges of either sign, so the
+fraction can exceed one.
+
+Text: for $k = 0, 1, 2, 3, 5, 8$, the number of channels kept, $Q_{\rm
+kept}$ and the fraction kept, one line per $k$. Figure: two panels over
+the channel rank (channels sorted by decreasing $z_c$): the bars of
+$z_c$ with the thresholds drawn, and the cumulative fraction of $Q_{\rm
+all}$ as more channels are included.
+
+\subsection{Step 12: zero suppression, the kept channels}
+
+The event at one threshold, $k$ from \code{--zs} or typed at the prompt.
+Text: $k$, the kept channels, $Q_{\rm kept}/Q_{\rm all}$, and the rms in
+the control window of the sum of the kept channels against that of the
+full sum (dropping noise channels lowers the noise of the sum). Figure:
+the $8\times8$ grid with only the kept channels drawn, and the sum of the
+kept channels over the full sum, to see that the pulse shape is
+preserved. A number at the prompt redoes the step with that $k$; Enter
+accepts and goes to the next event. The waveforms kept are float32.
+
 \section{A walk through one event}
 
 Event 1 of \code{197K\_39V\_th20}, produced with
@@ -387,6 +418,43 @@ step 10: REAL: Q/width 55.0 (cut 5), rising edge found, multiplicity 11; second 
 Charge above the cut and a rising edge: REAL. The second maximum outside
 the window is 4.6 noise widths, below the cut of 5, so no pile-up.
 
+\paragraph{Step 11: zero suppression, charge kept versus threshold.}
+\begin{lstlisting}
+step 11: zero suppression keeps channel c if q_c / sigma_q > k; Q_all = sum over 64
+  channels 2.609e+05 ADC ns; per threshold k: channels kept, Q_kept, fraction kept
+        k =   0   kept 34   Q_kept    3.749e+05   fraction  1.437
+        k =   1   kept 24   Q_kept    3.646e+05   fraction  1.397
+        k =   2   kept 15   Q_kept    3.336e+05   fraction  1.278
+        k =   3   kept 12   Q_kept     3.16e+05   fraction  1.211
+        k =   5   kept 11   Q_kept    3.084e+05   fraction  1.182
+        k =   8   kept  9   Q_kept     2.84e+05   fraction  1.089
+\end{lstlisting}
+Top: nine channels above 8 sigma, then a long tail of small positive
+values down to rank 30, and 30 channels with negative charge, down to
+$-4$ sigma. Bottom: the cumulative charge rises past $Q_{\rm all}$ at
+rank 9, peaks at 1.44 at rank 34 and comes back to 1 only when the
+negative channels are added. The channels without light do not sum to
+zero in this event: their drift over the charge window is net negative
+and worth 30\% of $Q_{\rm all}$. Zero suppression removes that drift
+along with the small positive tail, so $Q_{\rm kept}$ is larger than
+$Q_{\rm all}$ for any $k$; which of the two is the better estimate of the
+light is a question for the distributions over many events.
+
+\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s11.png}\end{center}
+
+\paragraph{Step 12: zero suppression, the kept channels.}
+\begin{lstlisting}
+step 12: k = 3: 12 channels kept [11, 12, 48, 49, 50, 51, 52, 53, 54, 55, 57, 61];
+  Q_kept/Q_all 1.211; control rms of the kept sum 12.4 ADC vs full sum 22.8
+\end{lstlisting}
+At $k = 3$ the twelve kept channels are the row 48 to 55 plus 11, 12, 57
+and 61. The sum of the kept channels (blue, bottom panel) has the same
+pulse as the full sum (grey) with half the noise: dropping 52 channels
+drops their noise too. A number typed at the prompt redraws the figure
+with that threshold.
+
+\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s12.png}\end{center}
+
 \section{Identifying the class}
 
 The figure of step~7, the sum with its moving average, the maximum and
@@ -431,7 +499,7 @@ pulse.
 \section{Figures}
 
 One figure per step (none for step~10), titled with the run, the event
-and the step. With \code{--save NAME} they go to
+and the step; step~12 redraws its figure for every threshold typed. With \code{--save NAME} they go to
 \code{src/py/plots/NAME\_evE\_sN.png} with $E$ the event index and $N$
 the step. The figures of this document are in \code{docs/figs/} (tracked
 in git) and were made with

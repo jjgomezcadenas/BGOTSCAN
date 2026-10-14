@@ -1,0 +1,170 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{template.py}: the shape of the single-photoelectron pulse}
+\author{BGOTSCAN}
+\date{2026-10-14}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+The single-photoelectron pulses of the SiPMs are 15 counts high and two or
+three samples wide (about 20~ns) on 4 counts of white noise per sample. A
+threshold on one sample cannot separate them from noise
+(\code{spe\_doc.tex}): a matched filter, which uses the shape of the pulse,
+is needed, and the shape must be measured first. This script does only
+that: it finds the pulse shape, the \emph{template}, from the pulses of
+the records, checks it channel by channel, and writes it for
+\code{spe.py} to use. It processes one event at a time in six steps, with
+the text and one figure per step, as \code{selection.py} and
+\code{spe.py}; the shape needs thousands of pulses, so its normal use is
+the \code{--summary} mode over a few hundred events. It is a Python script
+in \code{src/py/}, reading the raw HDF5 files with h5py.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/template.py RUN [options]
+\end{lstlisting}
+
+Interactive: after each step the script waits on the terminal; Enter goes
+to the next step, \code{n} abandons the event and starts the next one,
+\code{q} quits.
+
+\begin{center}
+\begin{tabular}{l l p{74mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{--data DIR} & the data directory & as in \code{wfview.py} \\
+\code{--events SPEC} & \code{0} & events to process: \code{a-b} or \code{a,b,c}, 0-based \\
+\code{--channel C} & 0 & the channel shown in steps 1 and 2 \\
+\code{--region R} & \code{tail} & search region: \code{tail}, the last \code{--tail} \us{} of the record, or \code{all} \\
+\code{--tail T} & 10 & length of the tail region in \us \\
+\code{--threshold A} & 12 & candidate threshold on the raw waveform, in ADC counts (3 sigma: high on purpose) \\
+\code{--half H} & 8 & half length of the template in samples: $2H + 1$ samples, 136~ns for $H = 8$ \\
+\code{--from-step N} & 1 & start the display at this step \\
+\code{--save NAME} & off & no prompts; figures saved as \code{src/py/plots/NAME\_evE\_sN.png} \\
+\code{--summary} & off & steps 1 and 2 silent per event; steps 3 to 6 once after the last event (figures saved as \code{NAME\_sN.png} with \code{--save}) \\
+\code{--write FILE} & off & write the refined template of step~5 to \code{FILE} as CSV \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Notation}
+
+$x_i$ is a channel waveform minus its baseline, the median over the
+record; $\Delta t = 8$~ns; $R$ is the search region (\code{spe\_doc.tex},
+step~1). No common-mode subtraction. A template is a vector $T_j$, $j =
+-H \dots H$, normalised to $T_0 = 1$ at the peak.
+
+\section{The steps}
+
+\subsection{Step 1: candidates on the channel}
+
+Candidates are the local maxima of the raw $x$ inside $R$ with $x >
+A_{\rm thr}$ (\code{--threshold}, 12 counts), taken in decreasing order
+and at least $2H$ samples apart. The threshold is high so that most
+candidates are real pulses; the price, pulses lost on the low side, does
+not matter here, since only the shape is wanted. Text: number, times and
+amplitudes. Figure: $x$ over $R$ with the threshold and the candidates
+marked.
+
+\subsection{Step 2: aligned pulses of the channel}
+
+For each candidate at sample $i_A$ (its maximum), the raw samples $x_{i_A
+- H} \dots x_{i_A + H}$ minus a local baseline, the median of the window
+samples more than two samples before the peak, which removes the slow
+wander of the channel at the time of the pulse without being pulled by
+the tail of the pulse itself. Text: the number of
+pulses. Figure: the pulses
+overlaid against the sample offset $j$, and their mean.
+
+\subsection{Step 3: all channels, accumulated}
+
+Steps 1 and 2 on the 64 channels, added to the pulses accumulated over
+the events processed so far. Text: pulses per channel as an $8\times8$
+table and the total. Figure: a two-dimensional histogram of amplitude
+versus offset $j$ over all accumulated pulses, with their mean drawn on
+top: the shape with its spread.
+
+\subsection{Step 4: first template}
+
+$T^{(1)}_j$ is the mean of the accumulated pulses at offset $j$, divided
+by its value at $j = 0$. Text: the $2H + 1$ values, the full width at
+half maximum in samples (linear interpolation between samples), the
+undershoot ($\min_{j > 0} T_j$), the sum of squares $\sum_j T_j^2$, and
+the standard error of the mean at the peak. Figure: $T^{(1)}$ with the
+standard error of each sample.
+
+The sum of squares is what the matched filter gains. For a pulse of
+shape $T$ on white noise $\sigma$, the least-squares amplitude at sample
+$i$ is
+\[
+  y_i = \frac{\sum_j T_j\, x_{i+j}}{\sum_j T_j^2},
+  \qquad \sigma_y = \frac{\sigma}{\sqrt{\sum_j T_j^2}},
+\]
+so the signal to noise improves by $\sqrt{\sum_j T_j^2}$ over the single
+sample.
+
+Bias: the candidates were selected on their maximum sample, so $x_0$ is
+on average high by the upward noise that helped it pass the threshold,
+about one count on 15, and the neighbours are not. $T^{(1)}$ is therefore
+slightly too peaked. The next step removes most of it.
+
+\subsection{Step 5: refined template}
+
+Every accumulated channel waveform is filtered with $T^{(1)}$ (the $y_i$
+above); candidates are found on $y$ with a threshold of $A_{\rm thr}$
+expressed in units of $\sigma_y$, measured as the rms of $y$ over $R$
+after clipping at 3 sigma; the raw samples are aligned on the maximum of
+$y$ and averaged: $T^{(2)}$. Since the alignment is now on a filtered
+quantity, the selection does not favour the central raw sample. Text:
+the values of $T^{(2)}$, the change $T^{(2)}_j - T^{(1)}_j$ per sample,
+both sums of squares. Figure: both templates overlaid. $T^{(2)}$ is the
+template to use.
+
+\subsection{Step 6: per-channel check}
+
+For each channel, the mean of its own aligned pulses (from step~5),
+normalised to its peak, against $T^{(2)}$: the residual $r_c$ is the rms
+over the $2H + 1$ samples of the difference. Text: the median of $r_c$,
+and the channels with $r_c$ above three times the median. Figure: the
+$8\times8$ map of $r_c$. If channels stand out, the pulse shape depends
+on the channel and the pass needs one template per channel; otherwise
+one template serves all.
+
+\section{Output}
+
+With \code{--write FILE}, $T^{(2)}$ is written as a CSV with two columns,
+offset in samples and value, and a header giving the run, the number of
+pulses, the threshold and $\sum_j T_j^2$. The natural place is
+\code{src/spe\_template\_RUN.csv}, tracked; whether one template serves all
+runs is decided by comparing them.
+
+\section{Examples}
+
+\begin{lstlisting}
+# one event, channel 0, every step (the template from a handful of pulses)
+python3 src/py/template.py 197K_39V_th20
+
+# the template from 300 events, figures saved, template written
+python3 src/py/template.py 197K_39V_th20 --events 0-299 --summary --save tpl197 \
+        --write src/spe_template_197K_39V_th20.csv
+\end{lstlisting}
+
+\end{document}
