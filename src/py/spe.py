@@ -17,128 +17,18 @@ from pathlib import Path
 import h5py
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
 
-from wfview import DATA, PLOTS, find_run, parse_events, smooth
-from selection import Stepper, grid64, rms
+from bgo.io import DATA, PLOTS, REPO, find_run, parse_events, read_template
+from bgo.signal import rms, clipped_rms, search_region, find_candidates, matched, channel_search
+from bgo.fit import ABIN, AMAX, gauss, fit_peak, crosstalk_ratio
+from bgo.plot import Stepper, grid64, map8
 
 STEPS = ("read the channel", "matched filter and candidates", "the pulses",
          "all 64 channels", "rates", "spectra, fit and equalization")
-SRC = Path(__file__).resolve().parent.parent
-ABIN, AMAX = 1.0, 80.0             # histogram of A (ADC)
+SRC = REPO / "src"
 
 
 # ---- definitions (the ones the JScan SPE pass will implement) ---------------------------
-def search_region(kind, tail_us, ns, dt):
-    if kind == "all":
-        return slice(0, ns)
-    return slice(max(0, ns - int(round(tail_us * 1000 / dt))), ns)
-
-
-def find_candidates(x, region, nsm, thr, sep):
-    """Local maxima of the smoothed x inside region, above thr, at least sep samples apart
-    (taken in decreasing order of height). Returns (smoothed, sorted candidate indices)."""
-    xs = smooth(x, nsm)
-    lo, hi = region.start, region.stop
-    seg = xs[lo:hi]
-    i = np.arange(1, len(seg) - 1)
-    loc = i[(seg[i] > thr) & (seg[i] >= seg[i - 1]) & (seg[i] > seg[i + 1])] + lo
-    kept = []
-    for j in loc[np.argsort(xs[loc])[::-1]]:
-        if all(abs(j - k) >= sep for k in kept):
-            kept.append(int(j))
-    return xs, sorted(kept)
-
-
-def read_template(path):
-    T = []
-    with open(path) as f:
-        for row in csv.DictReader(l for l in f if not l.startswith("#")):
-            T.append(float(row["value"]))
-    T = np.array(T)
-    if len(T) % 2 == 0 or abs(T[len(T) // 2] - 1) > 1e-6:
-        sys.exit(f"template {path}: expected an odd number of values with 1 at the centre")
-    return T
-
-
-def matched(x, T):
-    """Least-squares height of a pulse of shape T at every sample: y_i = sum_j T_j x_{i+j} / sum T^2.
-    Returns y aligned with x (edges set to zero)."""
-    H = (len(T) - 1) // 2
-    y = np.zeros_like(x)
-    y[H:len(x) - H] = np.correlate(x, T, mode="valid") / np.sum(T * T)
-    return y
-
-
-def clipped_rms(v, nsig=3.0):
-    s = rms(v)
-    return rms(v[np.abs(v - v.mean()) < nsig * s]) if s else 0.0
-
-
-def channel_search(x, T, region, nsig):
-    """Filtered waveform, its noise, the threshold and the candidates of one channel."""
-    H = (len(T) - 1) // 2
-    y = matched(x, T)
-    inner = slice(max(region.start, H), min(region.stop, len(x) - H))
-    sy = clipped_rms(y[inner])
-    thr = nsig * sy
-    _, cands = find_candidates(y, inner, 1, thr, 2 * H)
-    res = [rms(x[i - H:i + H + 1] - y[i] * T) for i in cands]
-    return y, sy, thr, cands, res
-
-
-def gauss(a, n, mu, w):
-    return n * np.exp(-0.5 * ((a - mu) / w) ** 2)
-
-
-def fit_peak(A, thr, sy):
-    """Gaussian fit of the single-photoelectron peak of the amplitudes A above the threshold.
-    Returns dict(n, A1, err, w1, ok, why, h, edges, lo, hi)."""
-    A = np.asarray(A)
-    out = dict(n=len(A), A1=np.nan, err=np.nan, w1=np.nan, ok=False, why="", h=None, edges=None)
-    if len(A) < 30:
-        out["why"] = "fewer than 30 pulses"
-        return out
-    h, edges = np.histogram(A, bins=np.arange(0, AMAX + ABIN, ABIN))
-    c = 0.5 * (edges[1:] + edges[:-1])
-    lo = thr + sy
-    vis = c >= lo
-    if not vis.any() or h[vis].sum() < 30:
-        out.update(why="fewer than 30 pulses above threshold", h=h, edges=edges)
-        return out
-    mode = c[vis][int(h[vis].argmax())]
-    hi = 1.6 * mode
-    sel = (c >= lo) & (c <= hi)
-    out.update(h=h, edges=edges, lo=lo, hi=hi)
-    if h[sel].sum() < 30 or sel.sum() < 4:
-        out["why"] = "fewer than 30 pulses in the fit range"
-        return out
-    try:
-        p, cov = curve_fit(gauss, c[sel], h[sel], p0=(h[sel].max(), mode, max(sy, 1.0)),
-                           bounds=([0, lo, 0.5 * sy], [np.inf, hi, hi]),
-                           sigma=np.sqrt(np.maximum(h[sel], 1.0)), absolute_sigma=True, maxfev=5000)
-    except RuntimeError:
-        out["why"] = "fit did not converge"
-        return out
-    n, mu, w = p
-    w = abs(w)
-    err = float(np.sqrt(cov[1, 1])) if np.isfinite(cov[1, 1]) else np.nan
-    out.update(A1=float(mu), err=err, w1=float(w))
-    if not lo <= mu <= hi:
-        out["why"] = "mean outside the fit range"
-    elif not 0.5 * sy <= w <= mu / 2:
-        out["why"] = "width out of bounds"
-    else:
-        out["ok"] = True
-    return out
-
-
-def crosstalk_ratio(values, m):
-    v = np.asarray(values)
-    low = np.sum(v < 1.5 * m)
-    return np.sum((v >= 1.5 * m) & (v < 2.5 * m)) / low if low else float("nan")
-
-
 # ---- steps -----------------------------------------------------------------------------
 def step1(ev, st, out, args):
     x, t, region, T = out["x"], ev["t"], out["region"], ev["T"]
@@ -308,23 +198,9 @@ def step6(ev, st, out, args, acc):
         ax.title.set_fontsize(9)
         ax.grid(lw=0.3)
     if ok:
-        grid_into(axs[1, 0], {c: f["A1"] for c, f in ok.items()}, "A1 (ADC)")
-        grid_into(axs[1, 1], g, "g = A1 / median")
+        map8(axs[1, 0], {c: f["A1"] for c, f in ok.items()}, "A1 (ADC)")
+        map8(axs[1, 1], g, "g = A1 / median")
     return st.show(6, fig)
-
-
-def grid_into(ax, values, title, fmt="{:.2f}"):
-    img = np.full((8, 8), np.nan)
-    for c, v in values.items():
-        img[c // 8, c % 8] = v
-    im = ax.imshow(img, cmap="viridis")
-    vmax = np.nanmax(img)
-    for c, v in values.items():
-        ax.text(c % 8, c // 8, f"{c}\n{fmt.format(v)}", ha="center", va="center", fontsize=6.5,
-                color="w" if v < np.nanmin(img) + 0.5 * (vmax - np.nanmin(img)) else "k")
-    ax.set(xticks=[], yticks=[], title=title)
-    ax.title.set_fontsize(9)
-    plt.colorbar(im, ax=ax, fraction=0.046)
 
 
 # ---- main ------------------------------------------------------------------------------

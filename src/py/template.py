@@ -17,11 +17,11 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from wfview import DATA, PLOTS, find_run, parse_events
-from selection import Stepper, grid64, rms
 from scipy.linalg import toeplitz
 
-from spe import search_region, find_candidates, matched
+from bgo.io import DATA, PLOTS, find_run, parse_events
+from bgo.signal import rms, clipped_rms, search_region, find_candidates, matched
+from bgo.plot import Stepper, grid64
 
 STEPS = ("candidates on the channel", "aligned pulses of the channel", "all channels, accumulated",
          "first template", "refined template", "per-channel check", "noise model and whitened filter")
@@ -29,12 +29,6 @@ DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
 
 
 # ---- definitions -----------------------------------------------------------------------
-def clipped_rms(v, nsig=3.0):
-    """rms after removing samples beyond nsig times a first rms (pulses excluded from the noise)."""
-    s = rms(v)
-    return rms(v[np.abs(v - v.mean()) < nsig * s]) if s else 0.0
-
-
 def aligned(x, cands, H, core=2):
     """Raw samples from H before to H after each candidate, minus a local baseline: the median of the
     window samples more than `core` samples before the peak (a tail cannot reach them). Candidates too
