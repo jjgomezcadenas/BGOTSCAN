@@ -7,7 +7,7 @@
 using Statistics
 using Dates
 
-export moving_average, common_mode, dead_cm, interpolate_cm, pulse_search, windows,
+export moving_average, common_mode, dead_cm, interpolate_cm, channel_baseline_line!, pulse_search, windows,
        channel_charges, matched_filter, spe_candidates, read_template,
        process_event, pass
 
@@ -192,6 +192,29 @@ function spe_candidates(z::AbstractVector, lo::Integer, hi::Integer, thr::Real, 
     return sort(kept)
 end
 
+"""
+    channel_baseline_line!(y, pre_hi, plo, phi) -> nskipped
+
+Per channel (columns of `y`), subtract a straight line from the level before the
+trigger (median of samples `1:pre_hi`) to the level after the pulse (median of
+samples `plo:phi`), both outside the pulse; when the post region does not fit in
+the record the channel is left as it is and counted.
+"""
+function channel_baseline_line!(y::AbstractMatrix, pre_hi::Integer, plo::Integer, phi::Integer)
+    ns, nch = size(y)
+    (pre_hi < 20 || phi > ns || phi - plo < 20) && return nch
+    i1, i2 = 0.5 * (1 + pre_hi), 0.5 * (plo + phi)
+    for c in 1:nch
+        yc = @view y[:, c]
+        L = median(@view yc[1:pre_hi]); R = median(@view yc[plo:phi])
+        slope = (R - L) / (i2 - i1)
+        @inbounds for i in 1:ns
+            yc[i] -= L + slope * (i - i1)
+        end
+    end
+    return 0
+end
+
 "Read a template CSV written by template.py (offset_samples,value; comment lines with #)."
 function read_template(path::AbstractString)
     vals = Float64[]
@@ -230,6 +253,10 @@ function process_event(w::AbstractMatrix, p)
          p.cm == "interp" ? interpolate_cm(m, lo0, hi0, p.edge)[1] :
          p.cm == "median" ? m : zeros(ns)
     y = x .- mt
+    nskip = 0
+    if p.chbase == "line"
+        nskip = channel_baseline_line!(y, p.pre_hi, imax0 + p.post_lo, imax0 + p.post_hi)
+    end
     S = vec(sum(y, dims = 2))
     B = median(@view S[ns - p.nbase + 1:ns])
     S .-= B
@@ -256,7 +283,7 @@ function process_event(w::AbstractMatrix, p)
             push!(spe_ch, c); push!(spe_i, i); push!(spe_A, A); push!(spe_res, res)
         end
     end
-    return (t_max = p.t[imax], H = H, t_rise = irise == 0 ? NaN : p.t[irise],
+    return (t_max = p.t[imax], H = H, t_rise = irise == 0 ? NaN : p.t[irise], chbase_skipped = nskip,
             win = (lo, hi), ctrl = (clo, chi), short = short, baseline = B, rms = s1,
             S = S, q = q, qctrl = qctrl, tc = [p.t[i] for i in imx],
             spe_ch = spe_ch, spe_t = [p.t[i] for i in spe_i], spe_A = spe_A, spe_res = spe_res,
@@ -298,8 +325,10 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
               cm_smooth::Integer = 125, edge::Integer = 32,
               nbase::Integer = 250, nsm::Integer = 64, window = (1000.0, 4000.0),
               tail_us::Real = 10.0, nsig::Real = 4.5, block::Integer = 200,
-              scale::Integer = 4, verbose::Bool = true)
+              scale::Integer = 4, chbase::AbstractString = "end", guard_us::Real = 0.4,
+              post_window = (10.0, 12.0), verbose::Bool = true)
     cm in ("dead", "interp", "median", "none") || throw(ArgumentError("cm must be dead, interp, median or none"))
+    chbase in ("end", "line") || throw(ArgumentError("chbase must be end or line"))
     T = read_template(template)
     run = openrun(runpath)
     try
@@ -311,6 +340,8 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
         p = (baselines = run.baselines, nbase = nbase, nsm = nsm,
              a = round(Int, window[1] / dt), b = round(Int, window[2] / dt),
              cm = cm, edge = edge, dead_cols = dead_cols, cm_smooth = cm_smooth,
+             chbase = chbase, pre_hi = run.pretrigger - round(Int, guard_us * 1000 / dt),
+             post_lo = round(Int, post_window[1] * 1000 / dt), post_hi = round(Int, post_window[2] * 1000 / dt),
              dt = dt, t = time_axis(run), T = T,
              ntail = round(Int, tail_us * 1000 / dt), nsig = nsig)
         # per-event arrays
@@ -322,7 +353,7 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
         qc = zeros(Float32, nch, nev); qcc = zeros(Float32, nch, nev); tc = zeros(Float32, nch, nev)
         spes = zeros(Float32, nch, nev)
         spe_ev = Int32[]; spe_ch = Int16[]; spe_t = Float32[]; spe_A = Float32[]; spe_r = Float32[]
-        nclip = 0
+        nclip = 0; nskipped = 0
         lim = 32767 ÷ scale
         k = 0
         for a in first(ev):block:last(ev)
@@ -331,7 +362,7 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
             for e in a:b
                 k += 1
                 r = process_event(@view(W[:, :, e - a + 1]), p)
-                t_max[k] = r.t_max; Hs[k] = r.H; t_rise[k] = r.t_rise
+                t_max[k] = r.t_max; Hs[k] = r.H; t_rise[k] = r.t_rise; nskipped += r.chbase_skipped > 0 ? 1 : 0
                 win_lo[k], win_hi[k] = r.win .- 1          # 0-based in the file
                 ctrl_lo[k], ctrl_hi[k] = r.ctrl .- 1
                 base[k] = r.baseline; rmss[k] = r.rms
@@ -387,6 +418,8 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
             A["trigger_rate_hz"] = dur > 0 ? mod(tid[end] - tid[1], 2^24) / dur : NaN
             A["cm"] = cm; A["edge"] = edge; A["baseline_window"] = nbase; A["smooth"] = nsm
             A["dead"] = collect(Int, dead); A["cm_smooth"] = cm_smooth
+            A["chbase"] = chbase; A["guard_us"] = Float64(guard_us); A["post_window_us"] = collect(Float64, post_window)
+            A["chbase_skipped_events"] = nskipped
             A["window_ns"] = collect(Float64, window); A["tail_us"] = Float64(tail_us); A["nsigma"] = Float64(nsig)
             A["template_file"] = abspath(template); A["template"] = T
             A["events_first"] = first(ev) - 1; A["events_last"] = last(ev) - 1

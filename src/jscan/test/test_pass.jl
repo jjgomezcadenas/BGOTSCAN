@@ -45,6 +45,21 @@ end
     @test S[155] > 45 && abs(S[300]) < 2                 # the pulse survives, the wander is gone
 end
 
+@testset "channel_baseline_line!" begin
+    ns = 1000
+    y = zeros(ns, 2)
+    y[:, 1] .= 1.0 .+ 0.01 .* (1:ns)            # a linear drift
+    y[:, 2] .= 5.0
+    y[300:320, 1] .+= 40.0                        # a pulse, between the two regions
+    @test channel_baseline_line!(y, 150, 600, 700) == 0
+    @test maximum(abs.(y[1:150, 1])) < 1e-9 && maximum(abs.(y[600:700, 1])) < 1e-9
+    @test abs(y[310, 1] - 40.0) < 1e-9             # the pulse survives
+    @test maximum(abs.(y[:, 2])) < 1e-9
+    z = ones(ns, 1)
+    @test channel_baseline_line!(z, 150, 950, 1100) == 1   # post region beyond the record: untouched
+    @test all(z .== 1.0)
+end
+
 @testset "interpolate_cm" begin
     m = collect(0.0:0.1:9.9)                    # 100 samples, slope 0.1
     mt, L, R = interpolate_cm(m, 41, 60, 4)
@@ -141,7 +156,8 @@ end
     openrun(FIXTURE) do run
         w = waveforms(run, 1)
         p = (baselines = run.baselines, nbase = 50, nsm = 8, a = 10, b = 40, cm = "interp",
-             edge = 8, dt = run.tsample_ns, t = time_axis(run), T = T, ntail = 100, nsig = 4.5)
+             edge = 8, dead_cols = Int[], cm_smooth = 25, chbase = "end", pre_hi = 15, post_lo = 60, post_hi = 80,
+             dt = run.tsample_ns, t = time_axis(run), T = T, ntail = 100, nsig = 4.5)
         r = process_event(w, p)
         @test length(r.S) == run.nsamp && all(isfinite, r.S)
         @test length(r.q) == run.nch && length(r.tc) == run.nch

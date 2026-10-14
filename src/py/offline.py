@@ -101,7 +101,7 @@ def main():
         j = int(masked.argmax()); i2[e] = j; P2[e] = masked[j]
         lo, hi = sorted((im, j)); V[e] = Sh[lo:hi + 1].min()
     sigma_Q = clipped_rms(Qc)
-    real = Q >= args.nsigma * sigma_Q
+    real = H >= args.nsigma * sN                 # the height of the smoothed pulse against the smoothed noise
     cls = np.where(~real, 0, np.where(irise >= 0, 1, 2))
     pile = (P2 > args.nsigma * sN) & (P2 - V > args.nsigma * sN)
     dt_pile = (i2 - imax) * dt

@@ -96,8 +96,12 @@ noise is measured on the run: $\sigma_Q$ = rms of $Q_{\rm ctrl}$ over all
 events (clipped at three times a first rms, so that pulses in the control
 window do not inflate it); this replaces the white-noise formula of the
 prototype. $\sigma_N$ = rms of $\hat S$ over the control window, per event.
-Class: EMPTY if $Q < K\sigma_Q$; REAL if $Q \ge K\sigma_Q$ and a rising
-edge; TAIL if $Q \ge K\sigma_Q$ and no rising edge. Pile-up: the maximum
+Class: EMPTY if $H < K\sigma_N$; REAL if $H \ge K\sigma_N$ and a rising
+edge; TAIL if $H \ge K\sigma_N$ and no rising edge. The class rests on the
+height of the smoothed pulse against the smoothed noise, not on $Q$
+against $\sigma_Q$ as in the prototype: $\sigma_Q$ is dominated by the
+slow wander of the sum, and a cut on $Q$ at five times it reaches into the
+511~keV peak. Pile-up: the maximum
 $P_2$ of $\hat S$ outside the charge window extended by the veto
 (\code{--veto}) on each side, the valley $V$ between it and $i_{\max}$;
 flagged if $P_2 > K\sigma_N$ and $P_2 - V > K\sigma_N$ (step~10); $\Delta
@@ -142,7 +146,12 @@ too weak to pass. It is fitted with a Gaussian on a background,
 \]
 the erfc term being the step of the Compton continuum under the peak,
 over $\mu \pm 2.5 s$, twice (the range updated after a first fit), by
-least squares with Poisson weights. Light yield of the estimator: $\mu$
+least squares with Poisson weights. The starting width is the width of
+the smoothed histogram at half its height around the located peak (a
+fixed 8\% of the position, used first, made the fit lock on a narrow
+slice of peaks that are 40\% wide), and the mean and width are bounded
+to within one starting width of it; a fit whose error is infinite or
+above 20\% of the position has reached a bound and is rejected. Light yield of the estimator: $\mu$
 in ADC\,ns, and in photoelectrons $\mu / q_{\rm pe}$ with $q_{\rm pe} = A_1
 \sum_j T_j \Delta t$ the charge of one photoelectron, $A_1$ the median
 single-photoelectron amplitude of the gain table and $T$ the template of

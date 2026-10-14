@@ -30,10 +30,12 @@ def main():
     ap.add_argument("--smooth", type=int, default=64, help="moving-average width of the pulse search (samples)")
     ap.add_argument("--window", default="1000,4000", help="charge window: ns before,after the maximum")
     ap.add_argument("--nsigma", type=float, default=5.0, help="lit if charge > nsigma x own charge noise")
-    ap.add_argument("--save", metavar="NAME", help="save the figure as src/py/plots/NAME_chanstat.png")
+    ap.add_argument("--dead", default="19,20,21,22,23,25,27,33,35,41,46,47", help="dead channels, comma list")
+    ap.add_argument("--save", metavar="NAME", help="save the figures as src/py/plots/NAME_chanstat.png and NAME_wander.png")
     ap.add_argument("--csv", metavar="FILE", help="write the table to FILE")
     args = ap.parse_args()
     thr = [float(v) for v in args.thresholds.split(",")]
+    dead = {int(v) for v in args.dead.split(",") if v.strip()}
     a_ns, b_ns = (float(v) for v in args.window.split(","))
 
     path = find_run(args.run, Path(args.data))
@@ -51,6 +53,8 @@ def main():
     n = a + b + 1
     cmap = read_map()
 
+    live_rows = np.array([c not in dead for c in channels]); dead_rows = ~live_rows
+    wander = []                               # (live median, dead mean) over the whole record, EMPTY events
     rms_acc = np.zeros(nch)
     slow_acc = np.zeros(nch)                 # rms of the 1 us moving average in the region: slow wander
     coh_num = 0.0; coh_den = 0.0             # coherence of the slow wander with the live-channel median
@@ -71,6 +75,9 @@ def main():
         # scintillation pulse on the sum, charge per channel in the window and in a control window
         S = smooth(x.sum(axis=0), args.smooth)
         imax = int(S.argmax())
+        if imax < ns - region.stop + region.start - 250 and len(wander) < 2000:     # pulse early: the tail region is clean
+            wander.append((np.median(x[live_rows][:, region], axis=0),
+                           x[dead_rows][:, region].mean(axis=0) if dead_rows.any() else np.zeros(region.stop - region.start)))
         lo, hi = max(0, imax - a), min(ns, imax + b + 1)
         ctrl = slice(ns - n, ns) if hi <= ns - n else slice(0, n)
         q_all.append(dt * x[:, lo:hi].sum(axis=1))
@@ -115,6 +122,55 @@ def main():
                 wr.writerow([r[0], r[1], r[2], f"{r[3]:.3f}"] + r[4:4 + len(thr)]
                             + [f"{r[-3]:.1f}", f"{r[-2] / 100:.4f}", f"{r[-1]:.1f}"])
         print(f"table written to {args.csv}")
+
+    # ---- the wander in the EMPTY events --------------------------------------------------------
+    if wander:
+        L = np.array([w[0] for w in wander]); D = np.array([w[1] for w in wander])
+        L = L - L.mean(axis=1, keepdims=True); D = D - D.mean(axis=1, keepdims=True)
+        nl = int(live_rows.sum()); nd = int(dead_rows.sum())
+        white_L = np.sqrt(np.pi / 2) * med_rms / np.sqrt(nl)          # noise of a median of nl white channels
+        white_D = med_rms / np.sqrt(max(nd, 1))
+        scales = [1, 12, 62, 125, 312, 625]                            # samples: 8 ns to 5 us
+        nr = L.shape[1]
+        rl = [np.sqrt(np.mean([rms(smooth(v, n)) ** 2 for v in L])) for n in scales]
+        rd = [np.sqrt(np.mean([rms(smooth(v, n)) ** 2 for v in D])) for n in scales]
+        # correlation between the live median and the dead mean at the 1 us scale
+        Ls = np.array([smooth(v, 125) for v in L]); Ds = np.array([smooth(v, 125) for v in D])
+        corr = np.sum(Ls * Ds) / np.sqrt(np.sum(Ls ** 2) * np.sum(Ds ** 2))
+        # the wander of the sum of the live channels over a 5 us window: rms of the window mean minus
+        # the end-of-record mean, times the number of live channels (coherent part only)
+        h = nr // 2
+        wsum = nl * np.sqrt(np.mean([(v[:h].mean() - v[h:].mean()) ** 2 for v in L]))
+        wdead = nd * np.sqrt(np.mean([(v[:h].mean() - v[h:].mean()) ** 2 for v in D])) * nl / max(nd, 1)
+        print(f"\nwander in the last {args.tail:g} us of {len(wander)} events whose pulse is early:")
+        print(f"  rms of the live-channel median at 8 ns / 0.1 / 0.5 / 1 / 2.5 / 5 us smoothing: "
+              + " / ".join(f"{v:.3f}" for v in rl) + f"  (white noise alone: {white_L:.3f} at 8 ns, falling as 1/sqrt(n))")
+        print(f"  rms of the dead-channel mean, same scales:                 " + " / ".join(f"{v:.3f}" for v in rd)
+              + f"  (white: {white_D:.3f})")
+        print(f"  correlation live median vs dead mean at the 1 us scale: {corr:.2f}")
+        print(f"  coherent wander of the sum of the {nl} live channels between two adjacent 5 us windows: {wsum:.1f} ADC per sample "
+              f"({wsum * 626 * 8:.3g} ADC ns over a window); the same from the dead-channel mean scaled to {nl} channels: {wdead:.1f} "
+              f"(white noise alone would give {nl * med_rms * np.sqrt(2 / h) * np.sqrt(np.pi / 2) / np.sqrt(nl):.1f})")
+        figw, axs = plt.subplots(1, 2, figsize=(12, 4.2))
+        us = [n * 8e-3 for n in scales]
+        axs[0].plot(us, rl, "o-", color="C0", label=f"median of the {nl} live channels")
+        axs[0].plot(us, rd, "s-", color="C3", label=f"mean of the {nd} dead channels")
+        axs[0].plot(us, [white_L / np.sqrt(n) for n in scales], "--", color="C0", lw=0.8, label="white noise, live median")
+        axs[0].plot(us, [white_D / np.sqrt(n) for n in scales], "--", color="C3", lw=0.8, label="white noise, dead mean")
+        axs[0].set(xscale="log", yscale="log", xlabel="smoothing scale (us)", ylabel="rms (ADC)", title="common mode in the tail region")
+        axs[0].grid(lw=0.3, which="both"); axs[0].legend(fontsize=8)
+        freq = np.fft.rfftfreq(nr, d=8e-9) / 1e6
+        PL = np.mean([np.abs(np.fft.rfft(v)) ** 2 for v in L], axis=0); PD = np.mean([np.abs(np.fft.rfft(v)) ** 2 for v in D], axis=0)
+        axs[1].plot(freq[1:], PL[1:], color="C0", lw=0.8, label="live median")
+        axs[1].plot(freq[1:], PD[1:], color="C3", lw=0.8, label="dead mean")
+        axs[1].set(xscale="log", yscale="log", xlabel="frequency (MHz)", ylabel="power", title="power spectra")
+        axs[1].grid(lw=0.3, which="both"); axs[1].legend(fontsize=8)
+        figw.suptitle(f"{path.stem}: the wander in the last {args.tail:g} us of {len(wander)} events", x=0.01, ha="left")
+        figw.tight_layout()
+        if args.save:
+            figw.savefig(PLOTS / f"{args.save}_wander.png", dpi=130)
+    else:
+        print("\nno event with an early pulse: no wander monitor")
 
     # ---- figure --------------------------------------------------------------------------
     fig, axs = plt.subplots(2, 2, figsize=(12, 11))

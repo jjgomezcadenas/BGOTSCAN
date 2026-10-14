@@ -69,11 +69,21 @@ def peak_bg(x, n, mu, s, c0, c1):
 
 
 def find_photopeak(h, c, frac=0.25, nsm=5):
-    """Rightmost local maximum of the smoothed histogram above `frac` of its maximum; bin centre."""
+    """Rightmost local maximum of the smoothed histogram above `frac` of its maximum: (centre, sigma),
+    sigma from the width of the smoothed peak at half its height (FWHM / 2.355)."""
     hs = np.convolve(h, np.ones(nsm) / nsm, mode="same")
     i = np.arange(1, len(hs) - 1)
     loc = i[(hs[i] >= hs[i - 1]) & (hs[i] > hs[i + 1]) & (hs[i] > frac * hs.max())]
-    return c[loc[-1]] if len(loc) else c[int(hs.argmax())]
+    k = int(loc[-1]) if len(loc) else int(hs.argmax())
+    half = 0.5 * hs[k]
+    lo = k
+    while lo > 0 and hs[lo] > half:
+        lo -= 1
+    hi = k
+    while hi < len(hs) - 1 and hs[hi] > half:
+        hi += 1
+    width = (c[hi] - c[lo]) / 2.355
+    return c[k], max(width, 2 * (c[1] - c[0]))
 
 
 def fit_photopeak(values, nbins=200, frac=0.25, nsig=2.5):
@@ -90,8 +100,7 @@ def fit_photopeak(values, nbins=200, frac=0.25, nsig=2.5):
     h, edges = np.histogram(v, bins=nbins, range=(0, top))
     c = 0.5 * (edges[1:] + edges[:-1])
     out.update(h=h, edges=edges)
-    mu = find_photopeak(h, c, frac)
-    s = 0.08 * mu
+    mu, s = find_photopeak(h, c, frac)
     p = None
     for _ in range(2):
         sel = (c > mu - nsig * s) & (c < mu + nsig * s)
@@ -102,14 +111,17 @@ def fit_photopeak(values, nbins=200, frac=0.25, nsig=2.5):
         p0 = (max(h[k], 1.0), mu, s, max(h[sel][0] - h[sel][-1], 0.0), max(h[sel][-1], 0.0))
         try:
             p, cov = curve_fit(peak_bg, c[sel], h[sel], p0=p0,
-                               bounds=([0, mu - nsig * s, 0.2 * s, 0, 0], [np.inf, mu + nsig * s, 3 * s, np.inf, np.inf]),
+                               bounds=([0, mu - s, 0.5 * s, 0, 0], [np.inf, mu + s, 2 * s, np.inf, np.inf]),
                                sigma=np.sqrt(np.maximum(h[sel], 1.0)), absolute_sigma=True, maxfev=20000)
         except RuntimeError:
             out["why"] = "fit did not converge"
             return out
         mu, s = p[1], abs(p[2])
-    out.update(mu=float(mu), err=float(np.sqrt(cov[1, 1])), s=float(s), fwhm_rel=float(2.355 * s / mu),
-               lo=float(mu - nsig * s), hi=float(mu + nsig * s), p=p, ok=True)
+    err = float(np.sqrt(cov[1, 1]))
+    out.update(mu=float(mu), err=err, s=float(s), fwhm_rel=float(2.355 * s / mu),
+               lo=float(mu - nsig * s), hi=float(mu + nsig * s), p=p, ok=np.isfinite(err) and err < 0.2 * mu)
+    if not out["ok"]:
+        out["why"] = "fit on a bound"
     return out
 
 
