@@ -3,6 +3,7 @@
 
     python3 src/py/template.py RUN [--events 0-199] [--channel 0] [--region tail|all] [--tail 10]
             [--threshold 12] [--half 8] [--from-step N] [--save NAME] [--summary] [--write FILE]
+            [--dead LIST] [--lags 32] [--pad 8] [--write-filter FILE]
 
 Interactive: Enter goes to the next step, n to the next event, q quits. See docs/template_doc.tex.
 """
@@ -18,10 +19,13 @@ import matplotlib.pyplot as plt
 
 from wfview import DATA, PLOTS, find_run, parse_events
 from selection import Stepper, grid64, rms
-from spe import search_region, find_candidates
+from scipy.linalg import toeplitz
+
+from spe import search_region, find_candidates, matched
 
 STEPS = ("candidates on the channel", "aligned pulses of the channel", "all channels, accumulated",
-         "first template", "refined template", "per-channel check")
+         "first template", "refined template", "per-channel check", "noise model and whitened filter")
+DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
 
 
 # ---- definitions -----------------------------------------------------------------------
@@ -42,16 +46,6 @@ def aligned(x, cands, H, core=2):
             p = x[i - H:i + H + 1]
             out.append(p - np.median(p[far]))
     return np.array(out) if out else np.zeros((0, 2 * H + 1))
-
-
-def matched(x, T):
-    """Least-squares height of a pulse of shape T at every sample: y_i = sum_j T_j x_{i+j} / sum T^2.
-    Returns y aligned with x (edges zero). No free constant: with one, windows holding a step
-    (low before, high after) pass as pulses with a long tail."""
-    H = (len(T) - 1) // 2
-    y = np.zeros_like(x)
-    y[H:len(x) - H] = np.correlate(x, T, mode="valid") / np.sum(T * T)
-    return y
 
 
 def template_stats(T):
@@ -234,6 +228,95 @@ def step6(ev, st, out, args, acc):
     return st.show(6, fig)
 
 
+def noise_model(segments, K):
+    """Autocorrelation R[0..K] and averaged periodogram of pure-noise segments (mean removed)."""
+    R = np.zeros(K + 1)
+    n = 0
+    spec = None
+    for x in segments:
+        x = x - x.mean()
+        L = len(x)
+        for k in range(K + 1):
+            R[k] += np.dot(x[:L - k], x[k:]) / (L - k)
+        P = np.abs(np.fft.rfft(x)) ** 2 / L
+        spec = P if spec is None else spec + P
+        n += 1
+    return R / n, spec / n
+
+
+def whitened_filter(T, R, pad):
+    """Best linear unbiased estimate of the height of a pulse T in noise of autocorrelation R:
+    w = C^-1 Tp / (Tp' C^-1 Tp), window = T padded with `pad` zeros on each side. Returns (w, Tp, sigma_y)."""
+    Tp = np.concatenate([np.zeros(pad), T, np.zeros(pad)])
+    L = len(Tp)
+    if len(R) < L:
+        R = np.concatenate([R, np.zeros(L - len(R))])
+    C = toeplitz(R[:L])
+    CinvT = np.linalg.solve(C, Tp)
+    denom = Tp @ CinvT
+    return CinvT / denom, Tp, float(np.sqrt(1.0 / denom))
+
+
+def step7(ev, st, out, args, acc):
+    T = acc.get("T1")
+    if T is None:
+        print("step 7: no template")
+        return st.show(7, plt.figure(figsize=(4, 3)))
+    dead = [c for c in args.dead if c in acc["waves"] and acc["waves"][c]]
+    segs = [x.astype(np.float64) for c in dead for x in acc["waves"][c]]
+    if not segs:
+        print("step 7: no dead-channel segments stored")
+        return st.show(7, plt.figure(figsize=(4, 3)))
+    K, H, pad, dt = args.lags, args.half, args.pad, ev["dt"]
+    R, spec = noise_model(segs, K)
+    rho = R / R[0]
+    sigma = np.sqrt(R[0])
+    below = np.flatnonzero(rho < np.exp(-1))
+    corr_len = int(below[0]) if len(below) else K
+    L = len(segs[0])
+    freq = np.fft.rfftfreq(L, d=dt * 1e-9) / 1e6
+    cum = np.cumsum(spec) / spec.sum()
+    frac = {f: float(cum[np.searchsorted(freq, f)]) for f in (10, 20, 30)}
+    # predicted noises
+    ssq = np.sum(T * T)
+    Cm = toeplitz(R[:len(T)])
+    sig_m = float(np.sqrt(T @ Cm @ T) / ssq)
+    w, Tp, sig_w = whitened_filter(T, R, pad)
+    # measured on the dead channels
+    ym = np.concatenate([matched(x, T)[H:len(x) - H] for x in segs[:400]])
+    Hp = (len(w) - 1) // 2
+    yw = np.concatenate([np.correlate(x, w, mode="valid") for x in segs[:400]])
+    mm, mw = clipped_rms(ym), clipped_rms(yw)
+    acc.update(w=w, R=R, sig_w=sig_w)
+    print(f"step 7: noise from {len(dead)} dead channels, {len(segs)} segments of {L} samples: rms {sigma:.2f} ADC; "
+          f"autocorrelation rho(1..8) = " + " ".join(f"{v:+.2f}" for v in rho[1:9])
+          + f"; correlation length {corr_len} samples; noise power below 10 / 20 / 30 MHz: "
+          + " / ".join(f"{100 * frac[f]:.0f}%" for f in (10, 20, 30)))
+    print(f"        predicted noise: single sample {sigma:.2f}, matched filter {sig_m:.2f} (white-noise expectation "
+          f"{sigma / np.sqrt(ssq):.2f}), whitened filter ({len(w)} samples) {sig_w:.2f}; "
+          f"measured on the dead channels: matched {mm:.2f}, whitened {mw:.2f}; "
+          f"gains over a single sample: matched {sigma / mm:.2f}, whitened {sigma / mw:.2f}")
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4))
+    axs[0].plot(np.arange(K + 1), rho, "o-", color="C0", ms=3)
+    axs[0].axhline(0, color="0.4", lw=0.5)
+    axs[0].set(xlabel="lag (samples)", ylabel="autocorrelation", title="noise autocorrelation")
+    tspec = np.abs(np.fft.rfft(np.concatenate([T, np.zeros(L - len(T))]))) ** 2
+    axs[1].plot(freq[1:], spec[1:] / spec[1:].max(), color="C0", lw=0.8, label="noise (dead channels)")
+    axs[1].plot(freq[1:], tspec[1:] / tspec[1:].max(), color="C3", lw=1.2, label="template")
+    axs[1].set(xlabel="frequency (MHz)", ylabel="power (peak = 1)", title="power spectra", yscale="log",
+               ylim=(1e-3, 2))
+    axs[1].legend(fontsize=8)
+    j = np.arange(-Hp, Hp + 1)
+    axs[2].plot(j, np.concatenate([np.zeros(pad), T / ssq, np.zeros(pad)]), "o--", color="0.5", ms=3, label="matched: T / sum T^2")
+    axs[2].plot(j, w, "o-", color="C0", ms=3, label="whitened")
+    axs[2].axhline(0, color="0.4", lw=0.5)
+    axs[2].set(xlabel="sample offset", ylabel="weight", title="filter weights")
+    axs[2].legend(fontsize=8)
+    for ax in axs:
+        ax.grid(lw=0.3)
+    return st.show(7, fig)
+
+
 # ---- main ------------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -245,11 +328,16 @@ def main():
     ap.add_argument("--tail", type=float, default=10.0, help="length of the tail region (us)")
     ap.add_argument("--threshold", type=float, default=12.0, help="candidate threshold on the raw waveform (ADC)")
     ap.add_argument("--half", type=int, default=8, help="half length of the template (samples)")
-    ap.add_argument("--from-step", type=int, default=1, choices=range(1, 7), help="first step shown")
+    ap.add_argument("--from-step", type=int, default=1, choices=range(1, 8), help="first step shown")
     ap.add_argument("--save", metavar="NAME", help="no prompts; save figures as src/py/plots/NAME_evE_sN.png")
     ap.add_argument("--summary", action="store_true", help="steps 1-2 silent; steps 3-6 after the last event")
     ap.add_argument("--write", metavar="FILE", help="write the first template as CSV")
+    ap.add_argument("--dead", default=DEAD, help="dead channels (noise sample of step 7), comma list")
+    ap.add_argument("--lags", type=int, default=32, help="lags of the noise autocorrelation (samples)")
+    ap.add_argument("--pad", type=int, default=8, help="zeros padded on each side of the template (step 7)")
+    ap.add_argument("--write-filter", metavar="FILE", help="write the whitened filter weights as CSV")
     args = ap.parse_args()
+    args.dead = [int(v) for v in args.dead.split(",") if v.strip()]
 
     path = find_run(args.run, Path(args.data))
     events = parse_events(args.events)
@@ -280,7 +368,8 @@ def main():
         accumulate(ev, out, args, acc)
         steps = [lambda: step1(ev, st, out, args), lambda: step2(ev, st, out, args),
                  lambda: step3(ev, st, out, args, acc), lambda: step4(ev, st, out, args, acc),
-                 lambda: step5(ev, st, out, args, acc), lambda: step6(ev, st, out, args, acc)]
+                 lambda: step5(ev, st, out, args, acc), lambda: step6(ev, st, out, args, acc),
+                 lambda: step7(ev, st, out, args, acc)]
         for n, step in enumerate(steps, start=1):
             if args.summary and not (last and n >= 3):
                 continue
@@ -298,11 +387,11 @@ def main():
         if not args.summary:
             print()
     if args.summary and args.save:
-        for n in range(3, 7):
+        for n in range(3, 8):
             src = PLOTS / f"{args.save}_ev{events[-1]}_s{n}.png"
             if src.exists():
                 src.rename(PLOTS / f"{args.save}_s{n}.png")
-        print(f"figures saved as {PLOTS}/{args.save}_s3..6.png")
+        print(f"figures saved as {PLOTS}/{args.save}_s3..7.png")
     if args.write and acc.get("T1") is not None:
         H = args.half
         _, allp = all_pulses(acc)
@@ -315,6 +404,18 @@ def main():
             for j, v in zip(range(-H, H + 1), acc["T1"]):
                 fo.write(f"{j},{v:.5f}\n")
         print(f"template written to {args.write}")
+
+
+    if args.write_filter and acc.get("w") is not None:
+        w = acc["w"]
+        Hp = (len(w) - 1) // 2
+        with open(args.write_filter, "w") as fo:
+            fo.write(f"# whitened matched filter of {path.stem}: noise rms {np.sqrt(acc['R'][0]):.3f} ADC from "
+                     f"channels {args.dead}, {args.lags} lags, pad {args.pad}, predicted sigma_y {acc['sig_w']:.3f}\n")
+            fo.write("offset_samples,weight\n")
+            for j, v in zip(range(-Hp, Hp + 1), w):
+                fo.write(f"{j},{v:.6f}\n")
+        print(f"filter written to {args.write_filter}")
 
 
 if __name__ == "__main__":

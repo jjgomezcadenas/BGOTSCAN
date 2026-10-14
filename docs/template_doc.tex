@@ -29,7 +29,7 @@ threshold on one sample cannot separate them from noise
 is needed, and the shape must be measured first. This script does only
 that: it finds the pulse shape, the \emph{template}, from the pulses of
 the records, checks it channel by channel, and writes it for
-\code{spe.py} to use. It processes one event at a time in six steps, with
+\code{spe.py} to use. It processes one event at a time in seven steps, with
 the text and one figure per step, as \code{selection.py} and
 \code{spe.py}; the shape needs thousands of pulses, so its normal use is
 the \code{--summary} mode over a few hundred events. It is a Python script
@@ -57,10 +57,14 @@ option & default & meaning \\
 \code{--tail T} & 10 & length of the tail region in \us \\
 \code{--threshold A} & 12 & candidate threshold on the raw waveform, in ADC counts (3 sigma: high on purpose) \\
 \code{--half H} & 8 & half length of the template in samples: $2H + 1$ samples, 136~ns for $H = 8$ \\
-\code{--from-step N} & 1 & start the display at this step \\
+\code{--from-step N} & 1 & start the display at this step (1 to 7) \\
 \code{--save NAME} & off & no prompts; figures saved as \code{src/py/plots/NAME\_evE\_sN.png} \\
 \code{--summary} & off & steps 1 and 2 silent per event; steps 3 to 6 once after the last event (figures saved as \code{NAME\_sN.png} with \code{--save}) \\
 \code{--write FILE} & off & write the refined template of step~5 to \code{FILE} as CSV \\
+\code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & channels without signal, used by step~7 as the noise sample \\
+\code{--lags K} & 32 & lags of the noise autocorrelation, in samples \\
+\code{--pad P} & 8 & zeros added on each side of the template for the whitened filter window ($2H + 1 + 2P$ samples) \\
+\code{--write-filter FILE} & off & write the whitened filter weights of step~7 to \code{FILE} as CSV \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -183,6 +187,60 @@ $8\times8$ map of $r_c$. If channels stand out, the pulse shape depends
 on the channel and the pass needs one template per channel; otherwise
 one template serves all.
 
+\subsection{Step 7: noise model and whitened filter}
+
+The matched filter of step~5 assumes white noise. Measured on the
+filtered waveforms, its noise is 3.7 counts against 4.0 raw, a gain of
+1.08 instead of the 1.5 that $\sqrt{\sum T_j^2}$ promises: the noise is
+correlated between neighbouring samples over about the width of the
+pulse, so a filter matched to the pulse is matched to the noise too.
+This step measures the noise and builds the filter that is optimal for
+it.
+
+\paragraph{Noise sample.} The dead channels (\code{--dead}; the twelve of
+\code{chanstat\_doc.tex}) carry no signal anywhere in the record: their
+search-region waveforms, stored by step~3 for all events processed, are
+pure noise of the chain.
+
+\paragraph{Autocorrelation.} $R_k = \langle x_i\, x_{i+k} \rangle$ for
+$k = 0 \dots K$ (\code{--lags}), averaged over the samples of each
+segment, the segments and the dead channels; $\rho_k = R_k / R_0$ is the
+normalised autocorrelation, $\sqrt{R_0}$ the noise rms. The correlation
+length is the first lag where $\rho_k$ falls below $1/e$.
+
+\paragraph{Power spectrum.} The periodogram $|\mathrm{FFT}(x)|^2$ of each
+segment, averaged, against frequency up to 62.5~MHz; and the spectrum
+of the template $|\mathrm{FFT}(T)|^2$ on the same axis, to see where the
+pulse lives relative to the noise.
+
+\paragraph{Whitened matched filter.} For a window of $L = 2H + 1 + 2P$
+samples (\code{--pad}, the template padded with zeros so that the window
+sees the noise correlation around the pulse), the noise covariance is
+the Toeplitz matrix $C_{mn} = R_{|m - n|}$ and the padded template is
+$T^p$. The best linear unbiased estimate of the pulse height is
+\[
+  y_i = \sum_j w_j\, x_{i+j}, \qquad
+  w = \frac{C^{-1} T^p}{T^{p\,\top} C^{-1} T^p}, \qquad
+  \sigma_y^2 = \frac{1}{T^{p\,\top} C^{-1} T^p}.
+\]
+With $C = \sigma^2 I$ this reduces to the matched filter of step~5. The
+predicted noise of the plain matched filter in this noise is
+$\sigma_{y,m}^2 = T^\top C T / (\sum T_j^2)^2$.
+
+Text: $\sqrt{R_0}$, $\rho_k$ for $k = 1 \dots 8$, the correlation length;
+the fraction of the noise power below 10, 20 and 30~MHz; the predicted
+noise of a single sample, of the matched filter and of the whitened
+filter, and the two measured on the dead channels (clipped rms of the
+filtered waveforms), with the gains. Figure: three panels: $\rho_k$
+against the lag; the noise and template spectra against frequency; the
+weights of the matched filter ($T / \sum T^2$) and of the whitened
+filter over the window.
+
+With \code{--write-filter FILE}, the weights $w$ are written as a CSV
+(offset in samples, weight) with a header giving the run, the noise rms,
+the lags and the predicted $\sigma_y$. \code{spe.py} can use them in
+place of the template (\code{--filter}).
+
 \section{Output}
 
 With \code{--write FILE}, $T^{(1)}$ is written as a CSV with two columns,
@@ -246,6 +304,28 @@ fit). $T^{(1)}$ is used.
 template serves all channels that have pulses.
 
 \begin{center}\includegraphics[width=0.6\textwidth]{figs/tpl_195K_s6.png}\end{center}
+
+\paragraph{Noise model and whitened filter (step 7, 500 events).}
+\begin{lstlisting}
+noise from 12 dead channels, 6000 segments of 1250 samples: rms 3.83 ADC;
+autocorrelation rho(1..8) = +0.43 +0.16 +0.02 +0.02 +0.00 +0.03 +0.01 +0.03;
+correlation length 2 samples; noise power below 10 / 20 / 30 MHz: 34% / 59% / 75%
+predicted noise: single sample 3.83, matched filter 3.61 (white-noise expectation 2.52),
+whitened filter (33 samples) 3.42; measured on the dead channels: matched 3.50,
+whitened 3.28; gains over a single sample: matched 1.09, whitened 1.17
+\end{lstlisting}
+The noise is correlated over two samples (0.43 at one lag, 0.16 at two,
+nothing beyond) and its spectrum is nearly flat, like the spectrum of
+the template: the pulse occupies the same band as the noise. The
+whitened filter gains 1.17 over a single sample, the matched filter
+1.09, and the white-noise prediction of 1.5 is never reached. No linear
+filter built on this pulse shape separates the single photoelectron
+from the noise better than a factor 1.2, and the single photoelectron
+stays a 5-sigma object at 41~V and a 4-sigma one at 39~V. The weak
+oscillation of the autocorrelation at even lags is a small component
+near 31~MHz, of no consequence.
+
+\begin{center}\includegraphics[width=\textwidth]{figs/tpl_195K_s7.png}\end{center}
 
 \section{Examples}
 
