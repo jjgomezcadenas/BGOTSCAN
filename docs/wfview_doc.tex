@@ -1,0 +1,116 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{wfview.py}: a viewer for the summed waveforms}
+\author{BGOTSCAN}
+\date{2026-10-14}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+A first look at the data, event by event: the sum of the 64 SiPM waveforms,
+raw and baseline-subtracted, with an optional moving average; the individual
+channels of one event; and the average summed pulse of a run. It reads the
+raw HDF5 files with h5py (the file layout is described in
+\code{jscan\_doc.tex}) and does no analysis beyond a baseline and a moving
+average. It is a Python script in \code{src/py/}.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/wfview.py RUN [options]
+\end{lstlisting}
+
+\code{RUN} is a run name (\code{128K\_37V\_th19}), with or without
+\code{.h5}, looked up in the data directory, or a path to a file.
+
+\begin{center}
+\begin{tabular}{l l p{80mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{--data DIR} & \code{2026\_10\_02\_bgo\_cryo\_tempscan/data\_cryo} (relative to the repository) & directory of the run files \\
+\code{--events SPEC} & \code{0-3} & events to show: a range \code{a-b} (inclusive) or a list \code{a,b,c}; 0-based as in the file \\
+\code{--baseline-window N} & 150 & number of pre-trigger samples, from the start of the record, used for the baseline \\
+\code{--smooth N} & 0 & width of the moving average in samples; 0 = off \\
+\code{--channels} & off & also show the 64 channels of the first selected event \\
+\code{--average} & off & also show the average summed pulse of the whole run \\
+\code{--save NAME} & off & save the figures as PNG under \code{src/py/plots/} with the prefix \code{NAME}; without it the figures are shown on screen \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Definitions}
+
+\paragraph{Time axis.} $t_i = (i - \code{pretrigger})\,\code{tsample\_ns}$,
+with $i$ the 0-based sample index, so the trigger is at $t = 0$ and the record
+runs from $-1.6$~\us{} to $22.4$~\us{} for these runs.
+
+\paragraph{Baseline.} Two baselines are used.
+\begin{itemize}
+\item \emph{WebDump}: the per-channel values stored in the attribute
+  \code{baselines}, measured with software triggers at the start of the run.
+\item \emph{Pre-trigger}: per event and channel, the median of the first $N$
+  samples of the record (\code{--baseline-window}, default 150 of the 200
+  pre-trigger samples). The window stops before the trigger because the
+  pulse often starts before $t = 0$ (the trigger fires late on these slow,
+  small pulses); keep $N$ small enough that the window is clean, and check
+  it on the average pulse.
+\end{itemize}
+
+\paragraph{Summed waveform.} $S_i = \sum_c (w_{c,i} - b_c)$ over the 64
+channels, with $b_c$ one of the baselines above. With the pre-trigger
+baseline, the pre-trigger level of $S$ is zero by construction, event by
+event.
+
+\paragraph{Moving average.} With \code{--smooth N}, $S$ is replaced by its
+mean over a window of $N$ samples centred on each sample (edges use the
+samples available). The white noise of the sum (about 30 ADC counts rms for
+64 channels at 3.9 counts each) goes down by $\sqrt{N}$; a pulse of several
+\us{} is not distorted by $N = 64$ (0.5~\us), a 300~ns pulse would be.
+
+\section{Figures}
+
+\paragraph{Summed waveforms (always).} One panel per selected event, in a
+grid. Each panel shows $S$ with the WebDump baselines (thin, grey), $S$ with
+the pre-trigger baseline (blue) and, if requested, its moving average
+(orange). The baseline window is shaded, the trigger is a dashed line. The
+title gives the event number and, from the pre-trigger-baseline sum: the
+maximum, its time, and the integral over the whole record in ADC\,$\cdot$\,ns.
+The same numbers are printed on the terminal, one line per event.
+
+\paragraph{Channels (\code{--channels}).} The 64 channels of the first
+selected event, baseline-subtracted (pre-trigger), on an $8 \times 8$ grid
+in channel order, shared axes, with the channel number in each panel.
+
+\paragraph{Average pulse (\code{--average}).} The mean of $S$ over all events
+of the run, read in chunks, with both baselines; the pre-trigger-baseline
+version is the reference. This is the figure that shows the pulse shape at
+each temperature and tells whether the baseline window is clean.
+
+\section{Examples}
+
+\begin{lstlisting}
+# four events at 128 K, smoothed over 0.5 us
+python3 src/py/wfview.py 128K_37V_th19 --events 0-3 --smooth 64
+
+# one event with its 64 channels
+python3 src/py/wfview.py 128K_37V_th19 --events 7 --channels
+
+# average pulse of the warm run, saved to src/py/plots/187K_*.png
+python3 src/py/wfview.py 187K_38d5V_th19 --average --save 187K
+\end{lstlisting}
+
+\end{document}

@@ -1,0 +1,25 @@
+# data (symlink to ~/Data) and any run file; the small test fixture is kept
+2026_10_02_bgo_cryo_tempscan
+*.h5
+!src/jscan/test/data/*.h5
+
+# local instructions
+CLAUDE.md
+
+# built plugin, python and notebook leftovers, figures
+*.dylib
+*.so
+__pycache__/
+.ipynb_checkpoints/
+src/py/plots/
+.DS_Store
+
+# LaTeX build files
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+docs/*.pdf

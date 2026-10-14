@@ -1,0 +1,151 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{runinfo.py}: run conditions, acquisition rate and true trigger rate}
+\author{BGOTSCAN}
+\date{2026-10-14}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+One table with the conditions of every run of the scan (start time, the
+three thermometers, bias, threshold) and what the event bookkeeping of the
+file says about the acquisition: how long the 5000 events took, at what rate
+they were recorded, how many triggers actually fired on the board meanwhile,
+and how the recorded events are spaced in time. It reads only the attributes
+and the two small per-event datasets \code{timestamp\_ns} and
+\code{trigger\_id} of each file, never the waveforms, so it runs in seconds
+over the twelve runs. It is a Python script in \code{src/py/}.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/runinfo.py [options]
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{l l p{78mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{--data DIR} & \code{2026\_10\_02\_bgo\_cryo\_tempscan/data\_cryo} (relative to the repository) & directory of the run files; \code{temperatures.txt} is looked for in its parent \\
+\code{--runs A B ...} & all \code{*.h5} in the directory & restrict to these runs (names with or without \code{.h5}) \\
+\code{--gap MS} & 10 & an interval between consecutive recorded events longer than this (ms) is counted as a readout gap and separates two bursts \\
+\code{--save NAME} & off & save the figure as \code{src/py/plots/NAME\_rates.png}; without it the figure is shown on screen \\
+\code{--no-figure} & off & table only \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Inputs}
+
+\paragraph{Run name.} \code{TTTK\_BBVV\_thNN}: nominal crystal temperature in
+K, SiPM bias in V with \code{d} for the decimal point (\code{39d5V} is
+39.5~V), trigger threshold in ADC counts.
+
+\paragraph{\code{temperatures.txt}.} Laura's file with three Python lists
+(\code{names}, \code{T1}, \code{T2}, \code{T3}) in the same order. T1 is on
+the aluminium case, T2 under it, T3 on the back face of the crystal. The
+script matches runs to this file by name; a run absent from it gets blanks.
+
+\paragraph{File attributes used.} \code{start\_time}, \code{events},
+\code{itl\_majority}, \code{threshold\_mode}, \code{pretrigger},
+\code{record\_length}, \code{tsample\_ns}.
+
+\paragraph{\code{timestamp\_ns}.} The board time of each recorded event in
+ns, from the digitizer clock.
+
+\paragraph{\code{trigger\_id}.} The board's trigger counter for each
+recorded event. The board increments it for \emph{every} trigger of the
+ITL logic, whether or not the event was read out, and it is a 24-bit
+counter that wraps at $2^{24} = 16\,777\,216$. The difference of consecutive
+recorded values is therefore the number of triggers that fired between the
+two events, including the recorded one, modulo $2^{24}$.
+
+\section{Definitions}
+
+\paragraph{Duration.} $D = (t_{N-1} - t_0)$ in seconds, from the first to
+the last recorded event.
+
+\paragraph{Recorded rate.} $r_{\rm rec} = (N-1)/D$ with $N$ the number of
+events in the file.
+
+\paragraph{True trigger rate.} The number of board triggers over the run,
+\[
+  n_{\rm trig} = (\code{trigger\_id}_{N-1} - \code{trigger\_id}_0) \bmod 2^{24},
+\]
+divided by $D$: $r_{\rm trig} = n_{\rm trig}/D$. The modulo handles a single
+wrap of the counter during the run; the counter can only wrap once in
+40~s (it would need more than 400~kHz). The fraction of triggers that were
+recorded is $f = (N-1)/n_{\rm trig}$.
+
+\paragraph{Bursts and gaps.} The intervals $\Delta t_i = t_{i+1} - t_i$
+between consecutive recorded events are split at \code{--gap}: intervals
+longer than it are readout gaps, the runs of events between gaps are
+bursts. The table gives the number of bursts, the median burst size (events)
+and the median gap and in-burst interval (ms). A readout that keeps up with
+the trigger has no gaps; a saturated one shows a fixed burst size (the
+board's buffer) and a fixed gap (the transfer time).
+
+\section{Output}
+
+\paragraph{Table.} One line per run, sorted by \code{start\_time}, with:
+run name, start time (clock time), T1, T2, T3 (K), bias (V), threshold (ADC),
+majority, duration (s), recorded rate (Hz), true trigger rate (Hz), fraction
+recorded (\%), number of bursts, median events per burst, median gap (ms),
+median in-burst interval (ms). The last line recalls the common settings
+(events, record length, pre-trigger, sampling).
+
+\paragraph{Figure (\code{NAME\_rates.png}).} Two panels, one $y$ axis each,
+logarithmic in rate.
+\begin{itemize}
+\item Left: true trigger rate versus bias. Runs are grouped by nominal
+  temperature; the groups taken at one setpoint (184--187~K and 195--197~K)
+  are joined by a line, the single runs (128, 153, 164~K) are isolated
+  points. Each point is labelled with its T3. The recorded rate is drawn
+  as a grey horizontal line: it is the same in all runs and is the readout
+  limit, not a physical rate.
+\item Right: true trigger rate versus T3, each point labelled with its
+  bias. The runs taken at ``constant overvoltage'' (bias raised with
+  temperature) are joined by a line.
+\end{itemize}
+
+\section{What the first run of the script showed (2026-10-14)}
+
+All twelve runs record 5000 events in 40.7~s, i.e.\ 123~Hz regardless of
+threshold, bias and temperature; the events come in bursts of about three,
+1.3~ms apart, separated by gaps of 22.8~ms. That is a readout saturated at
+about 47~MB/s. The trigger counter gives true rates from 1.9~kHz (128~K,
+37~V) to 225~kHz (195~K, 41~V), rising steeply with bias at fixed
+temperature and with temperature at roughly constant overvoltage: the
+trigger is dominated by dark-count coincidences, and the recorded events
+are a sample of 0.05\% to 7\% of the triggers. The scintillation events
+are a minority of the sample at the warm end, and an event selection that
+finds the pulse is needed before any light-yield measurement.
+
+\section{Examples}
+
+\begin{lstlisting}
+# table and figure on screen
+python3 src/py/runinfo.py
+
+# table only
+python3 src/py/runinfo.py --no-figure
+
+# figure saved to src/py/plots/scan_rates.png
+python3 src/py/runinfo.py --save scan
+\end{lstlisting}
+
+\end{document}

@@ -1,0 +1,269 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{JScan}: reading the BGO temperature-scan runs in Julia}
+\author{BGOTSCAN}
+\date{2026-10-14}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+\code{JScan} is the Julia side of the BGOTSCAN analysis: it will hold the
+passes over the full data set (baseline tracking, filtering, per-event
+features). This document covers what exists so far, the reader: opening a run,
+getting its parameters, reading blocks of waveforms. It also records the
+layout of the files written by the acquisition, which both the Julia and the
+Python code rely on.
+
+\section{The run files}
+
+Each run is one HDF5 file written by WebDump, the recording software of the
+CAEN DT2745 digitizer (Scope firmware): 64 channels, 125~MHz sampling, 16-bit
+ADC. The file name encodes the run conditions,
+\begin{lstlisting}
+<T>K_<V>V_th<thr>.h5      e.g.  185K_39d5V_th19.h5
+\end{lstlisting}
+with \code{T} the crystal temperature (thermometer T3) in kelvin, \code{V} the
+SiPM bias in volts (\code{d} stands for the decimal point: \code{39d5V} is
+39.5~V) and \code{thr} the trigger threshold in ADC counts.
+
+\subsection{Datasets}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+dataset & shape (as written) & type & content \\
+\midrule
+\code{waveforms}    & (events, channels, samples) & uint16  & raw ADC counts \\
+\code{channels}     & (channels,)                 & int16   & digitizer channel of each row \\
+\code{timestamp\_ns} & (events,)                  & float64 & trigger time of each event, ns \\
+\code{trigger\_id}  & (events,)                   & uint32  & board trigger counter \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The shape above is the C order of h5py and numpy. HDF5 stores arrays in that
+order, and Julia, which is column-major, sees the same bytes with the axes
+reversed: in \code{JScan} a block of waveforms is a
+(samples, channels, events) array, so \code{w[:, c, e]} is the waveform of
+channel \code{c} in event \code{e}, contiguous in memory. The datasets are
+chunked by two events and compressed with LZF (see section~\ref{sec:lzf}). For
+the runs of 2026-10-02: 5000 events, 64 channels, 3000 samples.
+
+\code{trigger\_id} counts every trigger the board saw; gaps between the ids of
+consecutive recorded events are triggers that were not recorded.
+
+\subsection{Attributes}
+
+All attributes are on the root group. Table~\ref{tab:attrs} lists them with
+the value of the run \code{128K\_37V\_th19}. Arrays have one entry per
+recorded channel.
+
+\begin{longtable}{l l p{72mm}}
+\caption{Root attributes of a run file.}\label{tab:attrs}\\
+\toprule
+attribute & example & meaning \\
+\midrule
+\endfirsthead
+\toprule
+attribute & example & meaning \\
+\midrule
+\endhead
+\code{model}, \code{serial}  & DT2745, 52694 & digitizer \\
+\code{fw\_type}, \code{fpga\_fw} & Scope, 1.0.257 & firmware \\
+\code{software}             & WebDump & recording program \\
+\code{url}                  & dig2://caendgtz-usb-52694 & connection \\
+\code{start\_time}          & 2026-10-02T14:47:45 & start of the run \\
+\code{events}               & 5000 & events recorded \\
+\code{stop\_reason}         & reached 5000 events & why the run stopped \\
+\code{dropped\_events}      & 0 & events lost by the recorder \\
+\code{sampling\_mhz}        & 125.0 & sampling frequency \\
+\code{tsample\_ns}          & 8.0 & sampling step, ns \\
+\code{record\_length}       & 3000 & samples per waveform \\
+\code{pretrigger}           & 200 & samples before the trigger \\
+\code{adc\_nbit}            & 16 & ADC resolution \\
+\code{adc\_to\_volts}       & $6.1455\times10^{-5}$ & volts per ADC count \\
+\code{zin\_ohm}             & 100.0 & input impedance, $\Omega$ \\
+\code{dc\_offsets\_percent} & [50.001, \dots] & DC offset per channel, \% of range \\
+\code{vga\_gains\_db}       & [1, 1, 1, 1] & gain of the four input stages, dB \\
+\code{baselines}            & [32777.6, \dots] & baseline per channel measured by WebDump with software triggers at the start of the run, ADC counts \\
+\code{trigger\_mode}        & self & trigger mode \\
+\code{trigger\_source}      & ITLA & trigger source (internal trigger logic A) \\
+\code{trigger\_channels}    & "[0, 1, \dots, 63]" & channels in the trigger (a string) \\
+\code{itl\_logic}           & Majority & logic of the internal trigger \\
+\code{itl\_majority}        & 2 & channels required over threshold \\
+\code{edge}                 & RISE & trigger edge \\
+\code{threshold\_mode}      & Relative & thresholds relative to the measured baselines (or Absolute) \\
+\code{thresholds}           & [19, \dots] & per-channel threshold as set, ADC counts \\
+\code{thresholds\_board\_absolute} & [32796, \dots] & the same, as absolute ADC values loaded in the board \\
+\bottomrule
+\end{longtable}
+
+\subsection{Conversions}
+
+With $g$ = \code{adc\_to\_volts} and $Z$ = \code{zin\_ohm}, a sample of $a$
+counts above baseline is a voltage $V = g\,a$, and the integral of a waveform
+over a window, $\sum a_i\,\Delta t$ in ADC\,$\cdot$\,ns, is a charge
+$Q = g\,\Delta t \sum a_i / Z$. For these runs $1$~ADC\,$\cdot$\,ns is
+$6.1455\times10^{-4}$~pC. Pulses are positive (the trigger edge is
+\code{RISE}).
+
+\section{The LZF plugin}\label{sec:lzf}
+
+WebDump compresses the waveforms with LZF, a filter that h5py carries built
+in (HDF5 filter id 32000) but that is not part of the HDF5 library. The HDF5
+library used by Julia (the \code{HDF5\_jll} artifact of \code{HDF5.jl},
+version 2.2.0 at the time of writing) therefore cannot decompress the files
+unless the filter is supplied as a plugin, a shared library that HDF5 loads
+at run time from a directory in its plugin search path.
+
+\code{src/h5lzf/} holds the six source files of the h5py filter
+(\code{lzf\_filter.c}, \code{lzf\_filter.h} and the LZF library of Marc
+Lehmann in \code{lzf/}, BSD licence in \code{LICENSE.txt}) and
+\code{build.sh}, which compiles them into \code{libh5lzf.dylib} against the
+headers and library of the HDF5 artifact that the Julia project uses. The
+artifact is an MPI-enabled build, so its public header includes
+\code{mpi.h}; the script finds that header in the matching MPI artifact of
+the Julia depot. The plugin is specific to the HDF5 library it was built
+against: rebuild it after the artifact changes. Python needs none of this.
+
+\section{Module \code{JScan}}
+
+Project at \code{src/jscan} (dependency: \code{HDF5.jl}). Load it with
+\begin{lstlisting}
+julia --project=src/jscan
+julia> using JScan
+julia> JScan.register_lzf()
+julia> run = JScan.openrun("2026_10_02_bgo_cryo_tempscan/data_cryo/128K_37V_th19.h5")
+julia> w = JScan.waveforms(run, 1:500)      # 3000 x 64 x 500 UInt16
+julia> t = JScan.time_axis(run)             # ns from the trigger
+julia> close(run.fid)
+\end{lstlisting}
+
+\subsection{\code{register\_lzf(dir = JScan.LZF\_PLUGIN\_DIR)}}
+
+Adds \code{dir} to the plugin search path of the HDF5 library, unless it is
+already there, and returns \code{dir}. The default is \code{src/h5lzf}. Throws
+an \code{ArgumentError} if the directory does not exist or does not contain
+\code{libh5lzf.dylib}. Must be called once per session before reading
+waveforms; attributes and the small datasets can be read without it. The
+plugin, once loaded, stays loaded for the session.
+
+\subsection{\code{parse\_runname(name)}}
+
+Parses a run name such as \code{"185K\_39d5V\_th19"} (no directory, no
+extension) and returns the named tuple
+\code{(T\_K = 185, V\_bias = 39.5, thr\_adc = 19)} with types
+\code{Int}, \code{Float64}, \code{Int}. Throws an \code{ArgumentError} if the
+name does not have the form \code{<int>K\_<int>[d<digits>]V\_th<int>}.
+
+\subsection{\code{openrun(path)} and \code{openrun(f, path)}}
+
+Opens the file read-only and returns the named tuple of
+table~\ref{tab:run}. The file stays open, so that \code{waveforms} can read
+from it; close it with \code{close(run.fid)}. The second form,
+\code{openrun(path) do run ... end}, calls \code{f(run)} and closes the file
+afterwards, also on error.
+
+\begin{longtable}{l l p{78mm}}
+\caption{Fields of the named tuple returned by \code{openrun}.}\label{tab:run}\\
+\toprule
+field & type & content, origin \\
+\midrule
+\endfirsthead
+\toprule
+field & type & content, origin \\
+\midrule
+\endhead
+\code{name}   & \code{String} & run name, file name without extension \\
+\code{path}   & \code{String} & path as given \\
+\code{T\_K}   & \code{Int}     & crystal temperature, K; from the name \\
+\code{V\_bias} & \code{Float64} & SiPM bias, V; from the name \\
+\code{thr\_adc} & \code{Int}   & trigger threshold, ADC counts; from the name \\
+\code{nev}    & \code{Int} & number of events; third dimension of \code{waveforms} \\
+\code{nch}    & \code{Int} & number of recorded channels; second dimension \\
+\code{nsamp}  & \code{Int} & samples per waveform; first dimension \\
+\code{channels} & \code{Vector{Int}} & digitizer channel of each row; dataset \code{channels} \\
+\code{tsample\_ns} & \code{Float64} & sampling step, ns; attribute \\
+\code{sampling\_mhz} & \code{Float64} & sampling frequency; attribute \\
+\code{pretrigger} & \code{Int} & pre-trigger samples; attribute. The trigger is at sample index \code{pretrigger + 1} (Julia, 1-based) \\
+\code{adc\_to\_volts} & \code{Float64} & volts per ADC count; attribute \\
+\code{zin\_ohm} & \code{Float64} & input impedance, $\Omega$; attribute \\
+\code{baselines} & \code{Vector{Float64}} & WebDump baselines per channel, ADC counts; attribute \\
+\code{thresholds} & \code{Vector{Int}} & per-channel thresholds as set; attribute \\
+\code{threshold\_mode} & \code{String} & \code{"Relative"} or \code{"Absolute"}; attribute \\
+\code{thresholds\_abs} & \code{Vector{Int}} & absolute thresholds in the board; attribute \code{thresholds\_board\_absolute} \\
+\code{edge} & \code{String} & trigger edge; attribute \\
+\code{itl\_logic} & \code{String} & internal trigger logic; attribute \\
+\code{itl\_majority} & \code{Int} & majority level; attribute \\
+\code{start\_time} & \code{String} & start of the run; attribute \\
+\code{timestamp\_ns} & \code{Vector{Float64}} & trigger time of each event, ns; dataset \\
+\code{trigger\_id} & \code{Vector{Int}} & board trigger counter per event; dataset \\
+\code{fid} & \code{HDF5.File} & the open file \\
+\code{wf} & \code{HDF5.Dataset} & the \code{waveforms} dataset, not read \\
+\bottomrule
+\end{longtable}
+
+Attributes not in the tuple (board model, firmware, DC offsets, \dots) are
+available as \code{HDF5.attrs(run.fid)}.
+
+\subsection{\code{waveforms(run, events)}}
+
+Reads the events in the range \code{events} (a \code{UnitRange}, 1-based)
+and returns a (\code{nsamp}, \code{nch}, \code{length(events)}) array of
+\code{UInt16}, raw ADC counts. With a single integer instead of a range, it
+returns the (\code{nsamp}, \code{nch}) matrix of that event. Throws a
+\code{BoundsError} if any event is outside \code{1:nev}. Reading is by whole
+events, so blocks of a few hundred events are efficient (the file is chunked
+by two events); a full run of 5000 events reads in about 1.3~s on an M-series
+laptop.
+
+\subsection{\code{time\_axis(run)}}
+
+Returns a \code{Vector{Float64}} of length \code{nsamp} with the time of each
+sample in ns from the trigger: $t_i = (i - 1 - \code{pretrigger})\,
+\code{tsample\_ns}$, so \code{t[pretrigger + 1] == 0}.
+
+\section{Tests}
+
+\code{src/jscan/test/runtests.jl}, run with \code{Pkg.test()}. They use a
+fixture, \code{test/data/185K\_39d5V\_th19.h5}, with the layout of a real run
+but 3 events, 64 channels and 300 samples, LZF-compressed, made once by
+\code{test/make\_fixture.py} with h5py. The waveform values follow the
+pattern $w[s, c, e] = 32768 + 100\,e + 3\,c + (s \bmod 11)$ with $e$, $c$,
+$s$ zero-based, so reads can be checked exactly. Its attributes are those of
+a real run, with \code{pretrigger} = 20 and \code{events} = 3.
+
+\begin{itemize}
+\item \code{parse\_runname}: integer bias (\code{37V}), half-volt bias
+  (\code{39d5V}), thresholds 19 and 20; a malformed name throws.
+\item \code{register\_lzf}: reading the fixture waveforms fails before
+  registration (checked only when \code{HDF5\_PLUGIN\_PATH} is unset, since
+  the plugin cannot be unloaded) and succeeds after; a second call is harmless;
+  a missing directory throws.
+\item \code{openrun}: every field of the tuple against the fixture's
+  attributes and shape; the do-block form closes the file.
+\item \code{waveforms}: shape, element type and exact values for an inner
+  range, for the last block and for a single event; an out-of-range request
+  throws.
+\item \code{time\_axis}: length, zero at the trigger sample, step equal to
+  \code{tsample\_ns}.
+\item Integration: ten events of the real run \code{128K\_37V\_th19} with the
+  expected dimensions; skipped if the data symlink is absent.
+\end{itemize}
+
+\end{document}
