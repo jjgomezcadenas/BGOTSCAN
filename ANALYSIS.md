@@ -7,6 +7,71 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
 
 ## 2026-10-15
 
+### The 39 V test: the trigger-rate noise is not the width (`src/jscan/pass.jl`, `src/py/offline.py`)
+
+- Pass of 197K_39V_th20 with the current defaults (dead-channel common
+  mode, the 41 V SPE template, the only one that exists), then offline.py
+  (figures `src/py/plots/197K_39V_*.png`). REAL 95%, pile-up 13%, 4133
+  events used; decay 2.72 +- 0.01 us (2.76 at 41 V).
+- Photopeak FWHM/peak, 41 V against 39 V (trigger rate 225 against
+  2.7 kHz): Q 49 / 58%, Q_all 47 / 55%, Q_0 46 / 44%, Q_0_eq 45 / 45%,
+  Q_kept 62 / 58%. The charge noise of the sum sigma_Q fell from 66 000
+  to 36 000 ADC ns, as the baseline scatter predicted; the peak fell to
+  437k from 564k (0.77, the overvoltage ratio 4.4 / 6.5 V, PDE
+  saturated). The width did not move.
+- Why no visible effect: the noise enters in quadrature and was never
+  the dominant term. Noise term 2.355 sigma_Q / peak: 28% at 41 V, 19% at
+  39 V; subtracted from the observed 46 and 44% it leaves 37 and 40%.
+  Quadrature predicts 46 -> 42%, observed 46 -> 44%: the effect is there
+  at the 2 to 4 point level and lost in the fit wobble. The hypothesis
+  that the trigger disturbance enters the per-channel charges beyond
+  what sigma_Q measures is rejected. A quieter trigger would gain a few
+  points, not the factor 3.
+- The remaining 37 to 40% at both biases is the thing to explain. At
+  39 V the multiplicity split repeats the 41 V picture: peak 259k for
+  <= 6 lit channels, 378k for 7 to 10, 473k for > 10 (a factor 1.8), 25
+  to 34% wide inside each class. Per seed channel: median width 24%,
+  36% far from the dead block, 46% next to it.
+- The spectra of all estimators are a single broad Gaussian from 150k to
+  700k: no Compton continuum below, no 1275 keV line in the plotted
+  range. The "photopeak" looks like a mixture of populations, not a
+  resolved line.
+- Next (the second branch of the handoff): look at the per-channel
+  charges of low- and high-multiplicity photopeak events, by eye, to
+  decide whether the factor 1.8 is in the light (position, dead block)
+  or in our per-channel charge.
+
+### The photopeak position depends on the seed channel: light collection, not gain (`src/py/offline.py`)
+
+- offline.py now locates the photopeak per seed channel (the live channel
+  with the largest equalized charge) on Q_0 and on Q_0_eq, and prints one
+  line per channel (events, both positions relative to the median, gain
+  factor, width). 197K_39V_th20, 44 channels with 40+ events:
+  spread of the positions 0.11 rms on both, range 0.75 to 1.22 on Q_0
+  and 0.76 to 1.21 on Q_0_eq; median width of one channel 28% on Q_0,
+  24% on Q_0_eq. The gain table narrows the peak of each channel a little
+  and leaves the spread between channels untouched. The ringers 11, 12,
+  49 (factors 1.36 to 1.52) sit at 1.00, 0.88, 1.03 after equalization.
+  An imprecise equalization is not the cause of the spread.
+- The spread follows the map (figure `src/py/plots/197K_39V_seedmap.png`):
+  the lowest peaks ring the dead block, 17 and 18 at 0.76 and 0.79, then
+  28, 34, 36, 37, 31, 24, 29 at 0.82 to 0.88 (also 4 and 5 at the top
+  middle, 0.82 and 0.85); the highest are far from it, 52 at 1.21, 2 at
+  1.18, 8, 10, 16, 55 at 1.12. An interaction next to the block loses 15
+  to 25% of its light. The 2% quoted earlier for "next to the block"
+  was an average dominated by channel 48 (752 of the 2779 events).
+- No top-to-bottom gradient: rows 0 and 1 average 1.03, rows 6 and 7
+  1.04. If the array shares the frame gradient, the SPE table absorbed it.
+- The width of a single seed channel far from the block is 12 to 20%
+  (52, 55, 2, 59, 13), with the 19% noise term still inside.
+- Channel 48, a ringer without a gain factor, is the seed of 752 events
+  (it wins the equalized comparison whenever it has light); its 41% width
+  is a mixture. To be given a factor from its light response, or dropped.
+- Conclusion: an uncorrected spread of 11% rms in the response costs 26%
+  FWHM on the overall peak, the largest single term. Next: one factor per
+  seed channel, measured from the peaks of the run itself, applied to the
+  charge of the event; then the fit of the overall peak again.
+
 ### State of the energy resolution question (handoff)
 
 - The 511 keV photopeak of 195K_41V_th20 is 45% FWHM in every charge
@@ -37,7 +102,7 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   shows for the firing that opens the record. One event looked at (step
   2 of selection.py, event 1 of 41 V) does not show a clear train of
   such excursions, so the mechanism is not confirmed; the scaling is.
-- NEXT, decisive and cheap: pass of 197K_39V_th20 with the current
+- NEXT (done, see the entry above): pass of 197K_39V_th20 with the current
   settings (dead-channel common mode; its present pass file is from the
   interp days) and offline.py on it. If the photopeak is near 15% at
   39 V, the noise at high trigger rate is the culprit and the cure is a

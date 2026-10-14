@@ -160,6 +160,27 @@ with it. Resolution: $\mathrm{FWHM}/\mu = 2.355\, s / \mu$. Figure
 \code{spectra}: the seven spectra with their fits; figure \code{classes}:
 the $Q$ spectrum of each class.
 
+\paragraph{Where the light fell: the seed channel.} The seed channel of
+an event is the live channel with the largest equalized charge, a proxy
+for the position of the interaction; its distance to the nearest dead
+channel on the map (\code{src/channel\_map.csv}) is $d_{\rm dead}$. For
+the REAL events without pile-up, the $Q^{\rm eq}_0$ photopeak is fitted in
+three bands of $d_{\rm dead}$ (on the block, next to it, far) and in three
+bands of multiplicity and two of $t_{\max}$. Then the events are grouped
+by seed channel and, for each channel with at least 40 events, the
+photopeak of the group is located on $Q_0$ and on $Q^{\rm eq}_0$ (the
+mode of the smoothed histogram, 60 bins; the width from the fit when the
+group has 100 events, from the smoothed histogram otherwise). The
+terminal gives, for each of the two charges, the median position, the
+spread of the positions (rms over median) and the range, and the median
+and range of the widths; then one line per seed channel, ordered by
+position: events, the $Q_0$ and $Q^{\rm eq}_0$ positions relative to
+their medians, the gain factor of the channel and the $Q^{\rm eq}_0$
+width. Comparing the spread on $Q_0$ and on $Q^{\rm eq}_0$ says whether
+the gain table moves the peaks; a spread that follows the map and not the
+gain factors is light collection. Figure \code{seedmap}: the position, the
+width and the number of events on the map of the channels.
+
 \paragraph{Average pulse and decay time.} The mean of $S$ over the REAL
 events without pile-up, each shifted so that its $i_{\max}$ falls on a
 common sample, over the samples all of them cover. The decay is fitted
@@ -187,7 +208,8 @@ decay time, and the channels without an equalization factor.
 nev: \code{index}, \code{cls} (0 EMPTY, 1 REAL, 2 TAIL), \code{pileup},
 \code{dt\_pile}, \code{t\_max}, \code{H}, \code{t\_rise}, \code{Q},
 \code{Q\_ctrl}, \code{Q\_all}, \code{Q\_0}, \code{Q\_kept},
-\code{Q\_all\_eq}, \code{Q\_0\_eq}, \code{Q\_kept\_eq}, \code{mult}; the
+\code{Q\_all\_eq}, \code{Q\_0\_eq}, \code{Q\_kept\_eq}, \code{mult},
+\code{seed}, \code{d\_dead}; the
 average pulse as \code{pulse} with its time axis; the options and the
 input files as attributes.
 

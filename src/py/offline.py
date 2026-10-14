@@ -135,31 +135,43 @@ def main():
     pile_frac = float(pile[cls == 1].mean()) if (cls == 1).any() else np.nan
     fits = {n: fit_photopeak(v[sel]) for n, v in est.items()}
     # resolution against the distance of the seed channel to the dead block
-    print(f"  seed channel distance to the nearest dead cell, Q_0_eq photopeak (REAL without pile-up):")
+    print(f"  seed channel distance to the nearest dead channel, Q_0_eq photopeak (REAL without pile-up):")
     for lab, m in (("on the block (< 6 mm)", d_dead < 6), ("next to it (6 to 12 mm)", (d_dead >= 6) & (d_dead < 12)),
                    ("far (>= 12 mm)", d_dead >= 12), ("far (>= 18 mm)", d_dead >= 18)):
         fi = fit_photopeak(est["Q_0_eq"][sel & m])
         print(f"    {lab:26s}: {int((sel & m).sum()):5d} events, " + (f"peak {fi['mu']:.4g}, FWHM {100 * fi['fwhm_rel']:.1f}%"
               if fi["ok"] else f"no fit ({fi['why']})"))
-    # photopeak per seed channel: position (mode of the smoothed histogram) and width where the fit works
+    # photopeak per seed channel: position (mode of the smoothed histogram) and width where the fit works,
+    # on the unequalized and on the equalized charge (the seed is the same: the largest equalized charge)
     seed_ch = np.array(channels)[seed]
-    pos_map, wid_map, n_map = {}, {}, {}
-    vals = est["Q_0_eq"]
-    for c in channels:
-        m = sel & (seed_ch == c)
-        n_map[c] = int(m.sum())
-        if n_map[c] >= 40:
-            h, edges = np.histogram(vals[m], bins=60, range=(0, np.percentile(vals[sel], 99.5)))
-            cc = 0.5 * (edges[1:] + edges[:-1])
-            mu0, s0 = find_photopeak(h, cc, 0.25, 3)
-            pos_map[c] = mu0
-            fi = fit_photopeak(vals[m], nbins=60) if n_map[c] >= 100 else None
-            wid_map[c] = fi["fwhm_rel"] if fi is not None and fi["ok"] else 2.355 * s0 / mu0
+    n_map = {c: int((sel & (seed_ch == c)).sum()) for c in channels}
+    by_seed = {}
+    for name in ("Q_0", "Q_0_eq"):
+        vals = est[name]
+        pos_map, wid_map = {}, {}
+        for c in channels:
+            m = sel & (seed_ch == c)
+            if n_map[c] >= 40:
+                h, edges = np.histogram(vals[m], bins=60, range=(0, np.percentile(vals[sel], 99.5)))
+                cc = 0.5 * (edges[1:] + edges[:-1])
+                mu0, s0 = find_photopeak(h, cc, 0.25, 3)
+                pos_map[c] = mu0
+                fi = fit_photopeak(vals[m], nbins=60) if n_map[c] >= 100 else None
+                wid_map[c] = fi["fwhm_rel"] if fi is not None and fi["ok"] else 2.355 * s0 / mu0
+        by_seed[name] = (pos_map, wid_map)
+        if pos_map:
+            pv = np.array(list(pos_map.values())); wv = np.array(list(wid_map.values()))
+            print(f"  {name} photopeak per seed channel ({len(pos_map)} channels with 40+ events): position median {np.median(pv):.4g}, "
+                  f"spread (rms/median) {pv.std() / np.median(pv):.2f}, lowest/highest {pv.min() / np.median(pv):.2f}/{pv.max() / np.median(pv):.2f}; "
+                  f"width of one seed channel: median {100 * np.median(wv):.0f}%, range {100 * wv.min():.0f} to {100 * wv.max():.0f}%")
+    pos_map, wid_map = by_seed["Q_0_eq"]
     if pos_map:
-        pv = np.array(list(pos_map.values())); wv = np.array(list(wid_map.values()))
-        print(f"  photopeak per seed channel ({len(pos_map)} channels with 40+ events): position median {np.median(pv):.4g}, "
-              f"spread (rms/median) {pv.std() / np.median(pv):.2f}, lowest/highest {pv.min() / np.median(pv):.2f}/{pv.max() / np.median(pv):.2f}; "
-              f"width within a cell: median {100 * np.median(wv):.0f}%, range {100 * wv.min():.0f} to {100 * wv.max():.0f}%")
+        pv = np.array(list(pos_map.values()))
+        pos0, wid0 = by_seed["Q_0"]
+        med0 = np.median(list(pos0.values()))
+        print("  per seed channel: events, Q_0 peak / median, Q_0_eq peak / median, gain factor, Q_0_eq FWHM")
+        for c in sorted(pos_map, key=lambda c: pos_map[c] / np.median(pv)):
+            print(f"    ch {c:2d}: {n_map[c]:4d}  {pos0[c] / med0:5.2f}  {pos_map[c] / np.median(pv):5.2f}  g {g_tab.get(c, 1.0):4.2f}  {100 * wid_map[c]:3.0f}%")
     for lab, m in (("multiplicity <= 6", mult <= 6), ("multiplicity 7 to 10", (mult > 6) & (mult <= 10)), ("multiplicity > 10", mult > 10),
                    ("t_max < 0.3 us", t[imax] < 300), ("t_max >= 0.3 us", t[imax] >= 300)):
         fi = fit_photopeak(vals[sel & m])
@@ -294,7 +306,7 @@ def main():
     if pos_map:
         fig, axs = plt.subplots(1, 3, figsize=(16, 5))
         map8(axs[0], {c: v / np.median(pv) for c, v in pos_map.items()}, "photopeak position by seed channel (median = 1)")
-        map8(axs[1], {c: 100 * v for c, v in wid_map.items()}, "FWHM within the cell (%)", "{:.0f}")
+        map8(axs[1], {c: 100 * v for c, v in wid_map.items()}, "FWHM by seed channel (%)", "{:.0f}")
         map8(axs[2], {c: v for c, v in n_map.items() if v > 0}, "events per seed channel", "{:.0f}")
         fig.suptitle(f"{run}: Q_0_eq by seed channel, REAL without pile-up", x=0.01, ha="left")
         fig.tight_layout(); figs["seedmap"] = fig
