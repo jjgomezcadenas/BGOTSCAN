@@ -199,6 +199,30 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   bias, or a lower-noise chain. The pulse shape at 41 V is kept as the
   template for a matched filter if one is needed.
 
+### The 64 channels (`src/py/chanstat.py`, `docs/chanstat_doc.tex`)
+
+- Twelve channels are dead: 19 to 23, 25, 27, 33, 35, 41, 46, 47. Normal
+  noise, no dark pulses, never lit in 500 events, charge noise of pure
+  white noise. A block on the map covering 19% of the face; light falling
+  on it is lost. To be masked in the pass and asked to Laura (known? SiPM,
+  bias or cable?).
+- Four channels have 30 to 50% more gain than the rest: 11, 12, 48, 49
+  (five times the dark-pulse candidates above 20 counts, lit three times
+  more often, 30 to 50% more charge when lit). The recurring cluster at
+  these channels is a gain pattern, not a position. Equalization is
+  mandatory and of this size.
+- Channel 44 has a slow baseline wander (charge noise three times the
+  others). Noise rms is uniform otherwise (3.4 to 4.3 counts).
+- The lit fraction of the normal channels is flat across the face (7 to
+  20%): the source illuminates the whole crystal; the map shows nothing
+  wrong at this level.
+- SPE template (`template.py`): the first template from 195K_41V_th20 at a
+  20-count threshold is stable (identical from 300 to 2000 events), 24 ns
+  at half maximum, matched-filter gain 1.5; written to
+  `src/spe_template.csv`. The refined template of step 5 comes out with a
+  longer tail in every variant (the filtered selection favours tailed
+  pulses) and is kept as a diagnostic only.
+
 ### Consequences for the light yield
 
 - Light yield versus temperature needs a gain and PDE correction, because
@@ -240,10 +264,12 @@ on the map above 3 sigma, several clusters allowed (Compton).
 
 ### Open questions for Laura
 
-1. Readout chain details: the shaper (type, gain, shaping time) and the
+1. The twelve dead channels (19 to 23, 25, 27, 33, 35, 41, 46, 47): known?
+   SiPMs, bias or cables?
+2. Readout chain details: the shaper (type, gain, shaping time) and the
    50 Ω input; it sets what a single photoelectron looks like.
-2. Trigger: the coincidence window of the majority-2 logic.
-3. Later, when the analysis says what is needed: next data (a longer
+3. Trigger: the coincidence window of the majority-2 logic.
+4. Later, when the analysis says what is needed: next data (a longer
    pre-trigger and record at the cold end, a dark run with long records at
    high bias for the SPE, stabilised temperatures).
 

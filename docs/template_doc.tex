@@ -128,15 +128,50 @@ slightly too peaked. The next step removes most of it.
 
 \subsection{Step 5: refined template}
 
-Every accumulated channel waveform is filtered with $T^{(1)}$ (the $y_i$
-above); candidates are found on $y$ with a threshold of $A_{\rm thr}$
-expressed in units of $\sigma_y$, measured as the rms of $y$ over $R$
-after clipping at 3 sigma; the raw samples are aligned on the maximum of
-$y$ and averaged: $T^{(2)}$. Since the alignment is now on a filtered
-quantity, the selection does not favour the central raw sample. Text:
-the values of $T^{(2)}$, the change $T^{(2)}_j - T^{(1)}_j$ per sample,
-both sums of squares. Figure: both templates overlaid. $T^{(2)}$ is the
-template to use.
+The first template is used to build the matched filter, and the pulses
+are chosen again with it.
+
+\begin{enumerate}
+\item \emph{Filter.} For every stored region waveform (all channels, all
+  events processed so far), at every sample $i$, the least-squares height
+  of a pulse of shape $T^{(1)}$ centred at $i$: minimise $\sum_j (x_{i+j}
+  - A\,T^{(1)}_j)^2$, whose solution is
+  \[
+    y_i = \frac{\sum_j T^{(1)}_j\, x_{i+j}}{\sum_j (T^{(1)}_j)^2},
+  \]
+  the matched filter. $y_i$ is in counts of the raw peak. Its noise is
+  $\sigma_y = \sigma / \sqrt{\sum_j (T^{(1)}_j)^2}$, measured as the
+  clipped rms of $y$ over the region. (A free constant for the local
+  level was tried: windows holding a step, low before and high after,
+  then pass as pulses and give the template a long tail. The local level
+  is handled at extraction instead.)
+\item \emph{Candidates} are the local maxima of $y$ above the same
+  significance as step~1, $A_{\rm thr}/\sigma$ in units of $\sigma_y$, at
+  least $2H$ samples apart. Noise maxima are rarer than on the raw
+  waveform, by the gain of the filter.
+\item \emph{Alignment.} For a candidate at $i_y$, the alignment sample
+  $i_A$ is the position of the raw maximum within $i_y \pm 1$. The
+  filtered value chooses the pulse; the raw maximum sets the alignment,
+  so the average is not smeared by the one-sample jitter of the filtered
+  position. (Aligning on $i_y$ itself broadens the template by that
+  jitter: it was tried and gave widths of 3 to 5 samples for the same
+  pulses.)
+\item \emph{Extraction and average} as in steps 2 and 4: raw samples
+  $i_A - H \dots i_A + H$ minus the local baseline, mean, normalised to
+  the peak: $T^{(2)}$.
+\end{enumerate}
+
+Text: the values of $T^{(2)}$, the change $T^{(2)}_j - T^{(1)}_j$ per
+sample, both widths at half maximum and sums of squares, the number of
+pulses. Figure: both templates overlaid.
+
+This step was meant to give the template to use. It does not (see the
+results below): the filtered selection favours pulses with a tail, and
+$T^{(2)}$ comes out wider than $T^{(1)}$ in the wings in every run tried.
+It is kept as a diagnostic of the heterogeneity of the pulse sample.
+The template written and used by \code{spe.py} is $T^{(1)}$, whose known
+defect is a central sample inflated by the selection bias, about one
+count in thirteen.
 
 \subsection{Step 6: per-channel check}
 
@@ -150,11 +185,67 @@ one template serves all.
 
 \section{Output}
 
-With \code{--write FILE}, $T^{(2)}$ is written as a CSV with two columns,
+With \code{--write FILE}, $T^{(1)}$ is written as a CSV with two columns,
 offset in samples and value, and a header giving the run, the number of
-pulses, the threshold and $\sum_j T_j^2$. The natural place is
-\code{src/spe\_template\_RUN.csv}, tracked; whether one template serves all
-runs is decided by comparing them.
+pulses, the threshold, $\sum_j T_j^2$ and the width. The template in use
+is \code{src/spe\_template.csv}, tracked.
+
+\section{Results (2026-10-14)}
+
+Run \code{195K\_41V\_th20}, the highest overvoltage (about 6.5~V), where the
+single photoelectron is largest; 2000 events, threshold 20 counts:
+\begin{lstlisting}
+python3 src/py/template.py 195K_41V_th20 --events 0-1999 --summary --save tpl195 \
+        --threshold 20 --write src/spe_template.csv
+\end{lstlisting}
+
+\paragraph{Pulses per channel (step 3).} 13\,845 pulses, but very
+unevenly spread: a median of about 200 per channel, 800 to 1050 in
+channels 11, 12, 48 and 49, and none at all in channels 19 to 23, 25, 27,
+33, 35, 41, 46 and 47. Zero pulses above 20 counts in 20~ms of
+search time means either a much smaller single-photoelectron amplitude
+in those channels (lower gain) or a much lower dark rate; and the four
+channels with five times the median are the same ones that carry the
+light in most events of \code{selection.py}. The channel-to-channel gain
+spread is large, not the few percent of the datasheet, and the clusters
+seen so far may be partly a gain pattern. This is the most important
+result of the run; the per-channel SPE spectra of \code{spe.py} will
+quantify it.
+
+\begin{center}\includegraphics[width=0.8\textwidth]{figs/tpl_195K_s3.png}\end{center}
+
+The aligned pulses: the pre-peak samples sit at zero (the local
+baseline), the pulse rises over two samples, peaks at 12.7 counts above
+its local level (the threshold of 20 is on the raw value, which includes
+that level), and decays over six samples; the spread after the peak is
+wide, $\pm 10$ counts, from pulses riding on other pulses.
+
+\paragraph{First template (step 4).}
+\begin{lstlisting}
+T1 = -0.108 -0.124 -0.030 -0.017 +0.117 +0.190 +0.414 +0.595 +1.000
+     +0.573 +0.427 +0.264 +0.247 +0.146 +0.144 +0.056 +0.067
+FWHM 3.03 samples (24 ns), undershoot +0.056, sum of squares 2.295
+\end{lstlisting}
+Identical, to the third decimal, to the template from the first 300
+events: the shape is stable. The matched-filter gain is 1.51.
+
+\begin{center}\includegraphics[width=0.6\textwidth]{figs/tpl_195K_s4.png}\end{center}
+
+\paragraph{Refined template (step 5).} 16\,335 pulses; $T^{(2)}$ has
+the same rise but a tail twice as high ($+0.2$ at 8 samples against
+$+0.07$), width 4.8 samples. The filtered selection, which weights the
+tail, picks more of the pulses that have one (afterpulses, delayed
+crosstalk, a second pulse close behind). The same happened in every
+variant tried (alignment on the filtered maximum, a free constant in the
+fit). $T^{(1)}$ is used.
+
+\begin{center}\includegraphics[width=0.6\textwidth]{figs/tpl_195K_s5.png}\end{center}
+
+\paragraph{Per-channel check (step 6).} Residual to the template, median
+0.023 in peak units; channel 49 stands out (0.06), the others agree. One
+template serves all channels that have pulses.
+
+\begin{center}\includegraphics[width=0.6\textwidth]{figs/tpl_195K_s6.png}\end{center}
 
 \section{Examples}
 

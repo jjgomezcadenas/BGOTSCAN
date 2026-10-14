@@ -1,0 +1,19 @@
+# SPE template (first template, raw-maximum selection) of 195K_41V_th20: 13845 pulses, threshold 20 ADC, 2000 events, sum of squares 2.2948, FWHM 3.03 samples
+offset_samples,value
+-8,-0.10831
+-7,-0.12405
+-6,-0.02970
+-5,-0.01650
+-4,0.11724
+-3,0.19021
+-2,0.41424
+-1,0.59521
+0,1.00000
+1,0.57262
+2,0.42710
+3,0.26427
+4,0.24684
+5,0.14617
+6,0.14384
+7,0.05623
+8,0.06692

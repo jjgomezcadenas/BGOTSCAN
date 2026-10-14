@@ -45,8 +45,9 @@ def aligned(x, cands, H, core=2):
 
 
 def matched(x, T):
-    """Least-squares amplitude of a pulse of shape T at every sample: y_i = sum_j T_j x_{i+j} / sum T^2.
-    Returns y aligned with x (edges set to zero)."""
+    """Least-squares height of a pulse of shape T at every sample: y_i = sum_j T_j x_{i+j} / sum T^2.
+    Returns y aligned with x (edges zero). No free constant: with one, windows holding a step
+    (low before, high after) pass as pulses with a long tail."""
     H = (len(T) - 1) // 2
     y = np.zeros_like(x)
     y[H:len(x) - H] = np.correlate(x, T, mode="valid") / np.sum(T * T)
@@ -184,7 +185,9 @@ def step5(ev, st, out, args, acc):
             sx, sy = clipped_rms(x), clipped_rms(y[H:len(y) - H])
             nsig = args.threshold / sx if sx else 3.0
             _, cands = find_candidates(y, slice(H, len(y) - H), 1, nsig * sy, 2 * H)
-            P = aligned(x, cands, H)
+            # align on the raw maximum within one sample of the filtered maximum
+            iA = [i - 1 + int(x[i - 1:i + 2].argmax()) for i in cands]
+            P = aligned(x, iA, H)
             if len(P):
                 pulses.append(P)
         per2[c] = np.concatenate(pulses) if pulses else np.zeros((0, 2 * H + 1))
@@ -195,8 +198,8 @@ def step5(ev, st, out, args, acc):
     acc["T2"], acc["n2"] = T2, len(allp)
     s1, s2 = template_stats(T1), template_stats(T2)
     j = np.arange(-H, H + 1)
-    print(f"step 5: filtered with T1, candidates above {nsig:.1f} sigma of the filtered noise, aligned on the "
-          f"filtered maximum: {len(allp)} pulses, peak {mean[H]:.2f} ADC\n"
+    print(f"step 5: filtered with T1, candidates above {nsig:.1f} sigma of the filtered "
+          f"noise, aligned on the raw maximum within one sample: {len(allp)} pulses, peak {mean[H]:.2f} ADC\n"
           f"        T2 = {fmt_template(T2)}\n"
           f"        T2 - T1 = {fmt_template(T2 - T1)}\n"
           f"        FWHM {s2['fwhm']:.2f} samples, undershoot {s2['undershoot']:+.3f}, "
@@ -245,7 +248,7 @@ def main():
     ap.add_argument("--from-step", type=int, default=1, choices=range(1, 7), help="first step shown")
     ap.add_argument("--save", metavar="NAME", help="no prompts; save figures as src/py/plots/NAME_evE_sN.png")
     ap.add_argument("--summary", action="store_true", help="steps 1-2 silent; steps 3-6 after the last event")
-    ap.add_argument("--write", metavar="FILE", help="write the refined template as CSV")
+    ap.add_argument("--write", metavar="FILE", help="write the first template as CSV")
     args = ap.parse_args()
 
     path = find_run(args.run, Path(args.data))
@@ -300,14 +303,16 @@ def main():
             if src.exists():
                 src.rename(PLOTS / f"{args.save}_s{n}.png")
         print(f"figures saved as {PLOTS}/{args.save}_s3..6.png")
-    if args.write and acc.get("T2") is not None:
+    if args.write and acc.get("T1") is not None:
         H = args.half
-        s = template_stats(acc["T2"])
+        _, allp = all_pulses(acc)
+        s = template_stats(acc["T1"])
         with open(args.write, "w") as fo:
-            fo.write(f"# SPE template of {path.stem}: {acc['n2']} pulses, threshold {args.threshold:g} ADC, "
-                     f"{acc['events']} events, sum of squares {s['ssq']:.4f}\n")
+            fo.write(f"# SPE template (first template, raw-maximum selection) of {path.stem}: {len(allp)} pulses, "
+                     f"threshold {args.threshold:g} ADC, {acc['events']} events, sum of squares {s['ssq']:.4f}, "
+                     f"FWHM {s['fwhm']:.2f} samples\n")
             fo.write("offset_samples,value\n")
-            for j, v in zip(range(-H, H + 1), acc["T2"]):
+            for j, v in zip(range(-H, H + 1), acc["T1"]):
                 fo.write(f"{j},{v:.5f}\n")
         print(f"template written to {args.write}")
 
