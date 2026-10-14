@@ -188,7 +188,7 @@ one template serves all.
 With \code{--write FILE}, $T^{(1)}$ is written as a CSV with two columns,
 offset in samples and value, and a header giving the run, the number of
 pulses, the threshold, $\sum_j T_j^2$ and the width. The template in use
-is \code{src/spe\_template.csv}, tracked.
+is \code{src/spe\_template\_RUN.csv}, one per run, tracked.
 
 \section{Results (2026-10-14)}
 
@@ -196,7 +196,7 @@ Run \code{195K\_41V\_th20}, the highest overvoltage (about 6.5~V), where the
 single photoelectron is largest; 2000 events, threshold 20 counts:
 \begin{lstlisting}
 python3 src/py/template.py 195K_41V_th20 --events 0-1999 --summary --save tpl195 \
-        --threshold 20 --write src/spe_template.csv
+        --threshold 20 --write src/spe_template_195K_41V_th20.csv
 \end{lstlisting}
 
 \paragraph{Pulses per channel (step 3).} 13\,845 pulses, but very

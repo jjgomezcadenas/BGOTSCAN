@@ -219,7 +219,7 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
 - SPE template (`template.py`): the first template from 195K_41V_th20 at a
   20-count threshold is stable (identical from 300 to 2000 events), 24 ns
   at half maximum, matched-filter gain 1.5; written to
-  `src/spe_template.csv`. The refined template of step 5 comes out with a
+  `src/spe_template_195K_41V_th20.csv` (one file per run). The refined template of step 5 comes out with a
   longer tail in every variant (the filtered selection favours tailed
   pulses) and is kept as a diagnostic only.
 
