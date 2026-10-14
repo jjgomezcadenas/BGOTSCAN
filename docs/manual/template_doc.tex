@@ -271,7 +271,7 @@ seen so far may be partly a gain pattern. This is the most important
 result of the run; the per-channel SPE spectra of \code{spe.py} will
 quantify it.
 
-\begin{center}\includegraphics[width=0.8\textwidth]{figs/tpl_195K_s3.png}\end{center}
+\begin{center}\includegraphics[width=0.8\textwidth]{../figs/tpl_195K_s3.png}\end{center}
 
 The aligned pulses: the pre-peak samples sit at zero (the local
 baseline), the pulse rises over two samples, peaks at 12.7 counts above
@@ -288,7 +288,7 @@ FWHM 3.03 samples (24 ns), undershoot +0.056, sum of squares 2.295
 Identical, to the third decimal, to the template from the first 300
 events: the shape is stable. The matched-filter gain is 1.51.
 
-\begin{center}\includegraphics[width=0.6\textwidth]{figs/tpl_195K_s4.png}\end{center}
+\begin{center}\includegraphics[width=0.6\textwidth]{../figs/tpl_195K_s4.png}\end{center}
 
 \paragraph{Refined template (step 5).} 16\,335 pulses; $T^{(2)}$ has
 the same rise but a tail twice as high ($+0.2$ at 8 samples against
@@ -298,13 +298,13 @@ crosstalk, a second pulse close behind). The same happened in every
 variant tried (alignment on the filtered maximum, a free constant in the
 fit). $T^{(1)}$ is used.
 
-\begin{center}\includegraphics[width=0.6\textwidth]{figs/tpl_195K_s5.png}\end{center}
+\begin{center}\includegraphics[width=0.6\textwidth]{../figs/tpl_195K_s5.png}\end{center}
 
 \paragraph{Per-channel check (step 6).} Residual to the template, median
 0.023 in peak units; channel 49 stands out (0.06), the others agree. One
 template serves all channels that have pulses.
 
-\begin{center}\includegraphics[width=0.6\textwidth]{figs/tpl_195K_s6.png}\end{center}
+\begin{center}\includegraphics[width=0.6\textwidth]{../figs/tpl_195K_s6.png}\end{center}
 
 \paragraph{Noise model and whitened filter (step 7, 500 events).}
 \begin{lstlisting}
@@ -326,7 +326,7 @@ stays a 5-sigma object at 41~V and a 4-sigma one at 39~V. The weak
 oscillation of the autocorrelation at even lags is a small component
 near 31~MHz, of no consequence.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/tpl_195K_s7.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/tpl_195K_s7.png}\end{center}
 
 \section{Examples}
 

@@ -2,7 +2,7 @@
     JScan
 
 Julia side of the BGOTSCAN analysis: the reader of the run files written by
-WebDump (CAEN DT2745) and the pass over a run. See docs/jscan_doc.tex.
+WebDump (CAEN DT2745) and the pass over a run. See docs/manual/jscan_doc.tex.
 """
 module JScan
 

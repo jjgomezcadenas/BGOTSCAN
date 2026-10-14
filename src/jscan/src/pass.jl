@@ -1,8 +1,8 @@
 # The pass: one read of a run that writes, per event, the corrected summed
 # waveform, the charge and time of every channel in the scintillation window,
 # and the single-photoelectron candidates of every channel.
-# Definitions: docs/selection_doc.tex (steps 1 to 9), docs/spe_doc.tex (steps 1
-# to 3); conventions and output layout: docs/jscan_doc.tex, section "The pass".
+# Definitions: docs/manual/selection_doc.tex (steps 1 to 9), docs/manual/spe_doc.tex (steps 1
+# to 3); conventions and output layout: docs/manual/jscan_doc.tex, section "The pass".
 
 using Statistics
 using Dates

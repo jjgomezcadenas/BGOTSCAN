@@ -5,7 +5,7 @@
             [--threshold 12] [--half 8] [--from-step N] [--save NAME] [--summary] [--write FILE]
             [--dead LIST] [--lags 32] [--pad 8] [--write-filter FILE]
 
-Interactive: Enter goes to the next step, n to the next event, q quits. See docs/template_doc.tex.
+Interactive: Enter goes to the next step, n to the next event, q quits. See docs/manual/template_doc.tex.
 """
 import argparse
 import contextlib

@@ -1,5 +1,5 @@
 #!/usr/bin/env julia
-# The pass over one run. See docs/jscan_doc.tex, section "The pass".
+# The pass over one run. See docs/manual/jscan_doc.tex, section "The pass".
 #
 #   julia --project=src/jscan src/jscan/pass.jl RUN [--out DIR] [--events a:b]
 #         [--template FILE] [--cm interp|median|none] [--edge 32] [--baseline-window 250]

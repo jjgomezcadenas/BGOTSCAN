@@ -25,3 +25,4 @@ pass/
 *.fdb_latexmk
 *.synctex.gz
 docs/*.pdf
+docs/manual/*.pdf

@@ -4,7 +4,7 @@
     python3 src/py/spe.py RUN [--events 0-9] [--channel 0] [--template FILE] [--region tail|all]
             [--tail 10] [--nsigma 4.5] [--from-step N] [--save NAME] [--summary] [--csv FILE]
 
-Interactive: Enter goes to the next step, n to the next event, q quits. See docs/spe_doc.tex.
+Interactive: Enter goes to the next step, n to the next event, q quits. See docs/manual/spe_doc.tex.
 """
 import argparse
 import contextlib

@@ -5,7 +5,7 @@
             [--baseline end|pre] [--baseline-window 250] [--smooth 64]
             [--window 1000,4000] [--nsigma 5] [--from-step N] [--save NAME]
 
-Interactive: Enter goes to the next step, n to the next event, q quits. See docs/selection_doc.tex.
+Interactive: Enter goes to the next step, n to the next event, q quits. See docs/manual/selection_doc.tex.
 """
 import argparse
 import contextlib

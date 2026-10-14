@@ -1,4 +1,4 @@
-# Tests of the pass (docs/jscan_doc.tex, section "The pass"): the pure functions
+# Tests of the pass (docs/manual/jscan_doc.tex, section "The pass"): the pure functions
 # on synthetic arrays, and the end-to-end comparison with the Python prototypes
 # on the real-event fixture when it and the dumps are present.
 

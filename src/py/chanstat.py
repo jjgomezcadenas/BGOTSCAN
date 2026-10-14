@@ -4,7 +4,7 @@
     python3 src/py/chanstat.py RUN [--events 0-499] [--tail 10] [--thresholds 12,16,20] [--smooth 64]
             [--window 1000,4000] [--nsigma 5] [--save NAME] [--csv FILE]
 
-One table and one figure of four 8x8 maps. See docs/chanstat_doc.tex.
+One table and one figure of four 8x8 maps. See docs/manual/chanstat_doc.tex.
 """
 import argparse
 import csv

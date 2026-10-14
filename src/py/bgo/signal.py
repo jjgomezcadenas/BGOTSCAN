@@ -1,7 +1,7 @@
 """bgo.signal: the waveform definitions shared by the scripts and mirrored by the JScan pass.
 
-The physics of each function is in docs/selection_doc.tex (steps 2 to 9) and docs/spe_doc.tex
-(steps 1 to 3); docs/bgo_doc.tex lists them with their signatures.
+The physics of each function is in docs/manual/selection_doc.tex (steps 2 to 9) and docs/manual/spe_doc.tex
+(steps 1 to 3); docs/manual/bgo_doc.tex lists them with their signatures.
 """
 import numpy as np
 

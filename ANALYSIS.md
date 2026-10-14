@@ -16,7 +16,7 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   gammas can reach the crystal: no coincidence to exploit.
 - 12 runs of 5000 events, 64 channels × 3000 samples at 125 MHz (24 µs,
   1.6 µs pre-trigger), self-trigger majority 2 at 19 to 20 ADC counts
-  (`docs/jscan_doc.tex` for the file layout).
+  (`docs/manual/jscan_doc.tex` for the file layout).
 - Five runs at one nominal overvoltage: 37, 38, 39, 40, 41 V at T3 = 128.6,
   153.1, 164.8, 184.8, 195.8 K, a line of about 60 mV/K, the datasheet
   temperature coefficient of a Hamamatsu MPPC breakdown voltage. Two bias
@@ -110,7 +110,7 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   at the warm end, against a 35% rise of the overvoltage along the scan:
   the assumption on f is a second-order effect, the scan-wide rise is not.
 
-### Acquisition and trigger (`src/py/runinfo.py`, `docs/runinfo_doc.tex`)
+### Acquisition and trigger (`src/py/runinfo.py`, `docs/manual/runinfo_doc.tex`)
 
 - Every run records its 5000 events in 40.7 s, 123 Hz, in bursts of 3 events
   1.3 ms apart separated by 22.8 ms gaps: the readout is saturated at about
@@ -127,7 +127,7 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   5000 × (real rate / trigger rate), smallest at the warm end at nominal
   bias.
 
-### Events (`src/py/selection.py`, `docs/selection_doc.tex`)
+### Events (`src/py/selection.py`, `docs/manual/selection_doc.tex`)
 
 - Per channel the noise is white, 4 ADC counts rms per sample; single
   photoelectron pulses of about 15 counts and 100 to 200 ns are visible in
@@ -198,7 +198,7 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   measurable per channel at 41 V (and only there); the pulse shape at
   41 V is the template of the matched filter.
 
-### The 64 channels (`src/py/chanstat.py`, `docs/chanstat_doc.tex`)
+### The 64 channels (`src/py/chanstat.py`, `docs/manual/chanstat_doc.tex`)
 
 - Twelve channels are dead: 19 to 23, 25, 27, 33, 35, 41, 46, 47. Normal
   noise, no dark pulses, never lit in 500 events, charge noise of pure
@@ -287,7 +287,7 @@ on the map above 3 sigma, several clusters allowed (Compton).
 ### Next
 
 - The first JScan pass over whole runs, with the definitions of
-  `docs/selection_doc.tex`: per event the baseline, control rms, maximum and
+  `docs/manual/selection_doc.tex`: per event the baseline, control rms, maximum and
   its time, rising edge, charge, multiplicity, verdict, written to a small
   table per run.
 - Python plots of the distributions: the fraction of each class per run,

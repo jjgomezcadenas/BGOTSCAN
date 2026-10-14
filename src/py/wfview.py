@@ -4,7 +4,7 @@
     python3 src/py/wfview.py RUN [--events 0-3 | 0,5,7] [--baseline-window 150]
                                  [--smooth N] [--channels] [--average] [--save NAME]
 
-Reads the raw WebDump HDF5 file with h5py. See docs/wfview_doc.tex.
+Reads the raw WebDump HDF5 file with h5py. See docs/manual/wfview_doc.tex.
 """
 import argparse
 import sys

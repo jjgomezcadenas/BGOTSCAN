@@ -4,7 +4,7 @@
     python3 src/py/runinfo.py [--data DIR] [--runs A B ...] [--gap MS] [--save NAME] [--no-figure]
 
 Reads only the attributes, timestamp_ns and trigger_id of each run (never the
-waveforms) and temperatures.txt. See docs/runinfo_doc.tex.
+waveforms) and temperatures.txt. See docs/manual/runinfo_doc.tex.
 """
 import argparse
 import ast

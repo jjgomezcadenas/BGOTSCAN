@@ -3,7 +3,7 @@
 
     python3 src/py/spefit.py RUN|FILE [--channel 48] [--min-pulses 30] [--dead LIST] [--save NAME] [--csv FILE]
 
-Reads pass/RUN_pass.h5 (JScan pass) only. See docs/spe_doc.tex, "spefit.py".
+Reads pass/RUN_pass.h5 (JScan pass) only. See docs/manual/spe_doc.tex, "spefit.py".
 """
 import argparse
 import csv

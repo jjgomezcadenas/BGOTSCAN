@@ -1,4 +1,4 @@
-"""bgo.fit: the single-photoelectron peak fit (docs/spe_doc.tex, step 6)."""
+"""bgo.fit: the single-photoelectron peak fit (docs/manual/spe_doc.tex, step 6)."""
 import numpy as np
 from scipy.optimize import curve_fit
 
@@ -11,7 +11,7 @@ def gauss(a, n, mu, w):
 
 def fit_peak(A, thr, sy):
     """Gaussian fit of the single-photoelectron peak of the amplitudes A above the threshold,
-    from one sigma above the threshold to 1.6 times the mode (docs/spe_doc.tex, step 6).
+    from one sigma above the threshold to 1.6 times the mode (docs/manual/spe_doc.tex, step 6).
     Returns dict(n, A1, err, w1, ok, why, h, edges, lo, hi)."""
     A = np.asarray(A)
     out = dict(n=len(A), A1=np.nan, err=np.nan, w1=np.nan, ok=False, why="", h=None, edges=None)

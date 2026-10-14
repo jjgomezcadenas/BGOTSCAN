@@ -5,7 +5,7 @@
 
 Writes src/jscan/test/data/real/<run>.h5 (LZF-compressed, all attributes copied) and the
 Python reference dumps next to it, by running selection.py and spe.py on the fixture:
-<run>_selection.json and <run>_spe.json. See docs/jscan_doc.tex, "The pass".
+<run>_selection.json and <run>_spe.json. See docs/manual/jscan_doc.tex, "The pass".
 """
 import argparse
 import os

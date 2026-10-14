@@ -26,7 +26,7 @@ Inside:
   first-look notebook (a copy is in `nb/`).
 
 The file layout (datasets and attributes) is documented in
-`docs/jscan_doc.tex`.
+`docs/manual/jscan_doc.tex`.
 
 ## Layout
 
@@ -40,10 +40,11 @@ The file layout (datasets and attributes) is documented in
 - `src/h5lzf/`: the LZF compression filter of h5py as an HDF5 plugin, needed
   for Julia to read the LZF-compressed files (h5py has it built in). See
   below.
-- `docs/`: LaTeX documentation, one file per module or script
-  (`jscan_doc.tex`, `wfview_doc.tex`, `runinfo_doc.tex`, `selection_doc.tex`,
-  `spe_doc.tex`, `template_doc.tex`, `chanstat_doc.tex`, `bgo_doc.tex`); the
-  figures they include are in `docs/figs/`.
+- `docs/`: the notes (`pre_analysis.tex`: the data, the detector and the
+  single photoelectron; the analysis note to come). `docs/manual/`: one LaTeX
+  document per module or script (`jscan_doc.tex`, `wfview_doc.tex`,
+  `runinfo_doc.tex`, `selection_doc.tex`, `spe_doc.tex`, `template_doc.tex`,
+  `chanstat_doc.tex`, `bgo_doc.tex`). The figures of both are in `docs/figs/`.
 - `nb/`: notebooks received from the authors, kept as received.
 - `ANALYSIS.md`: the dated log of findings, decisions and open questions.
 
@@ -77,7 +78,7 @@ reads a real run and is skipped if the data symlink is absent.
     python3 src/py/wfview.py 128K_37V_th19 --events 7 --channels
     python3 src/py/wfview.py 187K_38d5V_th19 --average --save 187K
 
-See `docs/wfview_doc.tex` for the arguments and what each figure shows.
+See `docs/manual/wfview_doc.tex` for the arguments and what each figure shows.
 
 ## Run conditions and trigger rates
 
@@ -87,7 +88,7 @@ One line per run: start time, the three thermometers, bias, threshold,
 duration, recorded rate, and the true trigger rate from the board's 24-bit
 trigger counter, plus a figure of trigger rate versus bias and temperature.
 The readout is saturated at 123 Hz in every run while the board triggers at
-1.9 to 225 kHz, mostly dark-count coincidences. See `docs/runinfo_doc.tex`.
+1.9 to 225 kHz, mostly dark-count coincidences. See `docs/manual/runinfo_doc.tex`.
 
 ## Event selection, step by step
 
@@ -99,5 +100,5 @@ search, charge, multiplicity, and the verdict REAL, TAIL (pulse started
 before the record) or EMPTY, with a PILE-UP flag when a second maximum is
 separated from the first by a valley. Enter advances, `n` skips to the next
 event, `q` quits; `--save NAME` runs without prompts and saves the figures.
-`docs/selection_doc.tex` defines every quantity and walks through one event
+`docs/manual/selection_doc.tex` defines every quantity and walks through one event
 with its figures.

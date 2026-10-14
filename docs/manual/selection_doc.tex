@@ -304,7 +304,7 @@ by eye in channels 48 to 53, 11 and 12, as a bump of 10 to 20 counts
 decaying over a microsecond at $t = 0$; the other channels are flat
 noise of 4 counts rms with isolated single-photoelectron spikes.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s1.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s1.png}\end{center}
 
 \paragraph{Step 2: common-mode analysis.}
 \begin{lstlisting}
@@ -319,7 +319,7 @@ following the shape of the sum: that is signal entering the median.
 Bottom: one channel before and after subtracting $m$, indistinguishable,
 as the coherent fraction of 3\% says.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s2.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s2.png}\end{center}
 
 \paragraph{Step 3: locate the pulse.}
 \begin{lstlisting}
@@ -330,7 +330,7 @@ step 3: S0 = sum over channels of (x - m), moving average over 64 samples:
 The pulse found on the median-subtracted sum, shrunk to 72 counts by the
 leak of step~2 but at the right place. $W$ is the shaded band.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s3.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s3.png}\end{center}
 
 \paragraph{Step 4: interpolate $m$ across $W$.}
 \begin{lstlisting}
@@ -343,7 +343,7 @@ carries the pulse, the line (blue) passes underneath from $L$ to $R$. The
 jump of 0.7 counts between the two ends is the slow wander across the
 window, 47 counts in the sum.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s4.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s4.png}\end{center}
 
 \paragraph{Step 5: subtract and sum.}
 \begin{lstlisting}
@@ -361,7 +361,7 @@ charge that \code{interp} keeps. The \code{none} charge is larger still
 because it includes the wander across $W$ that \code{interp} removes.
 Figure: the sum with no subtraction and with \code{interp}.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s5.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s5.png}\end{center}
 
 \paragraph{Step 6: baseline.}
 \begin{lstlisting}
@@ -372,7 +372,7 @@ The baseline is taken from the end window, so its level is zero by
 construction; the pre-trigger window, 1.6~\us{} earlier, sits 10 counts
 lower, the residual slow drift over the record.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s6.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s6.png}\end{center}
 
 \paragraph{Step 7: pulse search.}
 \begin{lstlisting}
@@ -384,7 +384,7 @@ rising edge, where it crosses half maximum, is 88~ns before the trigger,
 and the maximum 0.7~\us{} after it. This is the key figure for the class
 of the event (next section).
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s7.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s7.png}\end{center}
 
 \paragraph{Step 8: charge.}
 \begin{lstlisting}
@@ -395,7 +395,7 @@ The charge window (red) around the final maximum and the control window
 (grey) at the end of the record. The control charge is $-0.9$ widths,
 consistent with noise; the pulse charge is 55 widths.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s8.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s8.png}\end{center}
 
 \paragraph{Step 9: multiplicity.}
 \begin{lstlisting}
@@ -408,7 +408,7 @@ per-channel slow drift. Eleven channels are above 5 sigma: the row 48 to
 55 and 11, 12, the same channels seen by eye in step~1. Their charge
 exceeds $Q$ because the other 53 channels sum to a negative drift.
 
-\begin{center}\includegraphics[width=0.6\textwidth]{figs/sel_197K_ev1_s9.png}\end{center}
+\begin{center}\includegraphics[width=0.6\textwidth]{../figs/sel_197K_ev1_s9.png}\end{center}
 
 \paragraph{Step 10: verdict.}
 \begin{lstlisting}
@@ -441,7 +441,7 @@ along with the small positive tail, so $Q_{\rm kept}$ is larger than
 $Q_{\rm all}$ for any $k$; which of the two is the better estimate of the
 light is a question for the distributions over many events.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s11.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s11.png}\end{center}
 
 \paragraph{Step 12: zero suppression, the kept channels.}
 \begin{lstlisting}
@@ -454,7 +454,7 @@ pulse as the full sum (grey) with half the noise: dropping 52 channels
 drops their noise too. A number typed at the prompt redraws the figure
 with that threshold.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev1_s12.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev1_s12.png}\end{center}
 
 \section{Identifying the class}
 
@@ -478,7 +478,7 @@ there: the pulse started before the record, more than 1.6~\us{} before
 the trigger fired, and only its tail was recorded. The charge is
 significant but incomplete.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_128K_ev0_s7_tail.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_128K_ev0_s7_tail.png}\end{center}
 
 \paragraph{PILE-UP: two maxima with a valley between them.} Event 18 of
 \code{197K\_39V\_th20}:
@@ -495,7 +495,7 @@ pulse just outside the charge window is often above the threshold too,
 but there is no valley between it and the maximum, so it is not a second
 pulse.
 
-\begin{center}\includegraphics[width=\textwidth]{figs/sel_197K_ev18_s7_pileup.png}\end{center}
+\begin{center}\includegraphics[width=\textwidth]{../figs/sel_197K_ev18_s7_pileup.png}\end{center}
 
 \section{Figures}
 
