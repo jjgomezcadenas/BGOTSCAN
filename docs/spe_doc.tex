@@ -140,7 +140,12 @@ threshold $K \sigma_y$.
 \paragraph{Fit.} A Gaussian is fitted to the histogram of $A$ (1-count
 bins) between the threshold plus one $\sigma_y$ and 1.6 times the mode,
 by least squares with Poisson weights, the mean bounded to the fit range
-and the width to $[0.5\,\sigma_y, 1.6 \times \mathrm{mode}]$. Its mean is $A_1$, its width
+and the width to $[0.5\,\sigma_y, 1.6 \times \mathrm{mode}]$. Starting
+the range at the threshold itself was tried, on the grounds that the cut
+on $A$ only truncates the peak: the Gaussian then stretches over the
+truncation and the noise spike of the first bins, fewer channels pass
+the width bound (37 against 45 at 41~V) and the normal channels scatter
+more; the range one $\sigma_y$ above the cut is kept. Its mean is $A_1$, its width
 $w_1$; a fit is accepted if it has at least 30 pulses in the range, the
 mean lies inside the range, and $w_1$ is between $0.5\,\sigma_y$ and
 $A_1 / 2$. The fit is done for every channel and for all live channels

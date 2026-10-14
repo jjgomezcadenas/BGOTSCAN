@@ -10,7 +10,8 @@ def gauss(a, n, mu, w):
 
 
 def fit_peak(A, thr, sy):
-    """Gaussian fit of the single-photoelectron peak of the amplitudes A above the threshold.
+    """Gaussian fit of the single-photoelectron peak of the amplitudes A above the threshold,
+    from one sigma above the threshold to 1.6 times the mode (docs/spe_doc.tex, step 6).
     Returns dict(n, A1, err, w1, ok, why, h, edges, lo, hi)."""
     A = np.asarray(A)
     out = dict(n=len(A), A1=np.nan, err=np.nan, w1=np.nan, ok=False, why="", h=None, edges=None)
@@ -19,6 +20,8 @@ def fit_peak(A, thr, sy):
         return out
     h, edges = np.histogram(A, bins=np.arange(0, AMAX + ABIN, ABIN))
     c = 0.5 * (edges[1:] + edges[:-1])
+    # one sigma above the threshold: starting at the cut itself (tried) lets the Gaussian stretch
+    # over the truncation and the noise spike of the first bins, and fits fewer channels, worse
     lo = thr + sy
     vis = c >= lo
     if not vis.any() or h[vis].sum() < 30:
