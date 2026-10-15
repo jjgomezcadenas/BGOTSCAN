@@ -1,0 +1,203 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{cmnoise.py}: the noise common to the biased channels}
+\author{BGOTSCAN}
+\date{2026-10-15}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+The charge of the summed waveform over the 5~\us{} window carries a noise
+of 66\,000 ADC\,ns at 41~V, while one live channel carries 2400: if the
+52 live channels were independent the sum would carry $2400\sqrt{52}
+\approx 17\,000$. Most of the noise of the sum is therefore common to the
+live channels, and the twelve dead channels, which show pure white noise,
+do not see it (\code{chanstat\_doc.tex}, \code{ANALYSIS.md} 2026-10-15).
+Two sources are on the table: the trigger logic, which fires about five
+times per event at 41~V, recorded or not, and kicks the biased channels
+as the excursion at the trigger time shows; or a continuous noise common
+to the biased channels, from the bias line or elsewhere. The first gives
+discrete kicks in the tail of the events at the trigger rate; the second
+a continuous, Gaussian noise. This script isolates the common component
+in the tail of the events, shows it, measures how common it is and among
+which channels, takes its spectrum, and searches the tail for kicks with
+the shape of the one at the trigger time. It reads the raw HDF5 file with
+h5py, like \code{chanstat.py}, and the per-event classes of
+\code{offline.py} to keep only clean events.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/cmnoise.py RUN [--events 0-299] [--tail 12] [--smooth 125] [--dead LIST]
+        [--offline FILE] [--kick 16] [--nsigma 5] [--traces 4] [--save NAME]
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{l l p{80mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{RUN} & & run name or path of the raw file \\
+\code{--events a-b} & \code{0-299} & events read (0-based) \\
+\code{--tail T} & 12 & the tail: the last $T$~\us{} of the record \\
+\code{--smooth N} & 125 & running-mean width in samples (1~\us) of the slow component \\
+\code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & dead channels \\
+\code{--offline FILE} & \code{pass/RUN\_offline.h5} & per-event classes; without it every event is used \\
+\code{--kick K} & 16 & half-width of the kick template in samples \\
+\code{--nsigma S} & 5 & threshold of the kick search, in units of the filtered noise \\
+\code{--traces N} & 4 & events drawn in the trace figure \\
+\code{--save NAME} & & save the figures as \code{src/py/plots/NAME\_cmnoise\_*.png} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Definitions}
+
+A record is one event as the digitizer stores it: 3000 samples at 8~ns of
+the 64 channels, starting 1.6~\us{} before the trigger; ``event'' counts
+them, ``record'' refers to the waveform window. Every waveform is taken minus the WebDump baseline of its channel (the
+attribute \code{baselines}, one value per channel for the run), so that
+the offset of a record with respect to the run is kept. The events used
+are the REAL events without pile-up of \code{offline.py} whose maximum
+lies more than 4~\us{} before the tail, so that the scintillation pulse
+is below 3\% of its height throughout the tail.
+
+\paragraph{The two means.} Per event, over the tail, the mean of the live
+channels $L_i$ and the mean of the dead channels $D_i$, sample by sample,
+and their running means over $N$ samples $\bar L_i$, $\bar D_i$. For white
+noise of $\sigma$ counts per channel, the rms of a mean of $n$ channels is
+$\sigma/\sqrt n$, and of its running mean $\sigma/\sqrt{nN}$: with
+$\sigma = 4$, 0.55 and 0.05 counts for the 52 live channels, 1.15 and
+0.10 for the 12 dead ones. What $L$ has above these numbers is common to
+the live channels; $D$ is the control that it is not in the digitizer.
+
+\paragraph{Traces.} Figure \code{traces}: for the first \code{--traces}
+events, $L_i$ and $D_i$ as points and $\bar L_i$, $\bar D_i$ as lines
+against time, one panel per event, the same vertical scale.
+
+\paragraph{How much.} Figure \code{rms}: per event, the rms of $L$, $D$,
+$\bar L$ and $\bar D$ over the tail, each minus its own mean over the
+tail, as histograms over the events with the white-noise values marked;
+and the pooled distribution of the $\bar L$ samples with a Gaussian of
+the same rms, for the shape. The terminal prints the medians, the
+correlation between $\bar L$ and $\bar D$, and the scatter of the mean of
+$L$ over the tail between events (the event-to-event baseline scatter,
+47 counts on the sum at 41~V in \code{ANALYSIS.md}).
+
+\paragraph{Among whom.} The correlation matrix of the 64 channels: for
+each event the 64 running means over the tail, each minus its mean, and
+the covariance accumulated over the events, normalised to a correlation.
+Figure \code{corr}: the matrix, channels in order, dead channels marked.
+The terminal prints the mean correlation live--live, dead--dead,
+live--dead, the mean correlation within and across the four $4\times4$
+SiPM matrices of the map (a block structure points at the hardware that
+shares the noise), and the fraction of the live-channel variance in the
+first principal component with the spread of its loadings (a uniform
+loading is a noise common to all with the same weight).
+
+\paragraph{Spectrum.} Figure \code{spectra}: the power spectra of $L$,
+$D$ and $L - D$ over the tail, averaged over the events, against
+frequency.
+
+\paragraph{Between events.} The offset of each record from the run
+baseline, the mean over the tail per channel: its scatter between events
+for the live mean, the dead mean and a single channel, the correlation
+of the live and dead means, and the mean correlation between channels
+(live--live, dead--dead, live--dead). A constant offset over the record
+cancels in the charge, which takes its baseline from the same record;
+this is the quantity that was read as a baseline scatter following the
+trigger rate (\code{ANALYSIS.md}, 2026-10-15 morning).
+
+\paragraph{Kicks.} The median over the live channels of the record
+(robust against the lit channels), averaged over the events around the
+trigger sample, and the dead-channel mean averaged the same way, show
+what the biased and the unbiased channels do when the trigger fires. A
+first version took the extremum of that average as a kick template; it
+is not a kick but a step, the small pulse that the median channel
+carries, so the search uses a boxcar: the running mean of the live
+median of the tail over $2K + 1$ samples (\code{--kick} $K$, 264~ns by
+default), and a kick is a local extremum above \code{--nsigma} times its
+clipped rms with no larger one within a boxcar length. Figure
+\code{kick}: the two averages around the trigger, the per-event
+threshold, the running mean of one event with the threshold, and the
+amplitudes found. The terminal prints the step at the trigger, the
+threshold in counts per channel and on the sum, and the kicks per event
+and per \us{} against the expectation from the board trigger rate (read
+from \code{pass/RUN\_offline.json} when present) times the tail length:
+2.7 per 12~\us{} tail at 41~V, 0.03 at 39~V.
+
+\section{Findings (2026-10-15, 195K\_41V\_th20 and 197K\_39V\_th20, 300 events each)}
+
+\begin{itemize}
+\item \emph{No kicks.} Any excursion of the live median above 0.94
+  counts per channel (49 on the sum) lasting 264~ns would be found; 0 in
+  236 clean events at 41~V against 637 expected if the trigger logic
+  kicked the channels at each of its 225~kHz firings. The trigger
+  hypothesis is excluded at that size. The feature at the trigger time
+  is a step of $+3.3$ counts per channel in the live median, $+0.05$ in
+  the dead mean: the pulse of the median channel, light and not pickup;
+  the ``excursion of 200 counts on the sum at the trigger'' of
+  \code{selection\_doc.tex} is this step times 52.
+\item \emph{Within the record} the common noise among the live channels
+  is weak: pairwise correlation 0.03 of the 1~\us{} running means, with
+  no block structure (the four SiPM matrices 0.02 to 0.05, within and
+  across alike) and a first principal component holding 5\% of the
+  variance. The dead channels show none (0.00). Weak per pair, it still
+  dominates the sum: $1 + 51 \times 0.03 = 2.5$, so about 60\% of the
+  slow variance of the sum is this common part and 40\% the independent
+  per-channel slow noise.
+\item \emph{The per-channel slow noise is in every channel}, dead or
+  live: the 1~\us{} running mean of the live mean has an rms of 0.117
+  against 0.047 for white noise, the dead mean 0.181 against 0.098, the
+  same excess once the number of channels is accounted for, and the
+  spectra of both rise below 0.3~MHz the same way. It is in the
+  front-end or the digitizer, not in the bias or the SiPMs.
+\item \emph{Nothing depends on the bias or the trigger rate.} Every
+  number above is the same at 41~V (225~kHz) and at 39~V (2.7~kHz):
+  running-mean rms 0.117 and 0.118, correlations 0.03 and 0.03,
+  spectra identical. The baseline scatter that fell as the square root
+  of the trigger rate (47 counts at 41~V to 5.6 at 39~V) compared a pass
+  with the dead-channel common mode to passes with the interpolated
+  median: with the same method the pass files give 47 and 29 (clipped
+  32 and 28), and this script 44 and 48 on clean events.
+\item \emph{Between events} every channel's offset scatters by 1.3
+  counts, dead or live, with a correlation of 0.4 to 0.5 between any two
+  channels: a board-wide offset of about 0.9 counts common to the 64
+  channels plus a per-channel part of about 1 count. It cancels in the
+  charge.
+\item \emph{An 18~MHz line} in the live mean, absent from the dead
+  mean, at both biases: a coherent pickup in the biased channels, far
+  above the frequencies the charge integrates over.
+\end{itemize}
+
+Consequence: the noise of the charge is the slow noise within the
+record, two parts, a per-channel one from the front-end and a weakly
+common one among the biased channels, neither tied to the trigger. The
+software handle is per channel (a baseline model per channel over the
+window, as the per-channel noise is 2400 ADC\,ns against 700 for white
+noise) and fewer channels in the sum; the hardware question is the
+front-end's low-frequency noise.
+
+\section{Examples}
+
+\begin{lstlisting}
+python3 src/py/cmnoise.py 195K_41V_th20 --save cm195   # docs/figs/cmnoise_195K_{traces,rms,corr,spectra,kick}.png
+python3 src/py/cmnoise.py 197K_39V_th20 --save cm197
+\end{lstlisting}
+
+\end{document}

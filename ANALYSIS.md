@@ -41,6 +41,57 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   decide whether the factor 1.8 is in the light (position, dead block)
   or in our per-channel charge.
 
+### The noise is not the trigger: a slow oscillation in every channel, a weak common part in the biased ones (`src/py/cmnoise.py`, `docs/manual/cmnoise_doc.tex`)
+
+- cmnoise.py isolates the noise in the tail of the record (last 12 us,
+  pulse gone) on 300 events of 195K_41V_th20 and 197K_39V_th20 (236 and
+  245 clean events): the mean of the 52 live channels and the mean of
+  the 12 dead channels sample by sample, their rms raw and after a 1 us
+  running mean against the white-noise expectation, the 64 x 64
+  correlation of the running means, the spectra, the average around the
+  trigger, and a search for excursions of the live median (figures
+  docs/figs/cmnoise_195K_*.png).
+- No kicks of the trigger logic. Any excursion of the live median above
+  0.94 counts per channel (49 on the sum) lasting 264 ns is found; 0 in
+  236 events at 41 V against 637 expected if each of the 225 kHz firings
+  kicked the channels. The average around the trigger shows only the
+  pulse of the median channel, a step of +3.3 counts per channel in the
+  live median, +0.05 in the dead mean: the "excursion of 200 counts on
+  the sum at the trigger" of selection_doc.tex is this step times 52,
+  light and not pickup.
+- What the noise is: a slow oscillation near 0.33 MHz (a 3 us period,
+  seen in the traces and as a peak in the spectra, with smaller ones at
+  0.6 and 0.9 MHz) present in every channel, dead or live, with its own
+  phase per channel: the running-mean rms is 0.117 for the live mean
+  against 0.047 white, 0.181 for the dead mean against 0.098, the same
+  excess; correlation between channels 0.03 live-live, 0.00 dead-dead
+  and live-dead, no block structure (SiPM matrices or digitizer groups
+  of 16). On a single channel it is about 0.7 counts rms, the 2400 ADC
+  ns of per-channel charge noise against 700 white. It is in the
+  front-end or the digitizer, not in the bias or the SiPMs.
+- The weak common part among the biased channels (0.03 per pair, uniform)
+  still dominates the sum: 1 + 51 x 0.03 = 2.5, so 60% of the slow
+  variance of the sum is common, 40% per channel. An 18 MHz line in the
+  live mean and not in the dead mean is a coherent pickup on the bias
+  side, harmless for the charge.
+- Nothing depends on the bias or the trigger rate: every number is the
+  same at 41 V (225 kHz) and 39 V (2.7 kHz). The morning's clue, a
+  baseline scatter falling as the square root of the trigger rate (47
+  counts at 41 V to 5.6 at 39 V), compared a pass with the dead-channel
+  common mode to passes with the interpolated median: with the same
+  method the pass files give 47 and 29 (clipped 32 and 28), and
+  cmnoise.py 44 and 48 on clean events. Withdrawn.
+- Between events every channel's offset from the run baseline scatters
+  by 1.3 counts, dead or live, with a correlation of 0.4 to 0.5 between
+  any two channels: a board-wide offset of about 0.9 counts plus a
+  per-channel part; it cancels in the charge (same-record baseline).
+- Consequence: the charge noise is the slow oscillation within the
+  record, per channel from the front-end and weakly common among the
+  biased channels, not the trigger. Software handle: per channel, a
+  baseline model over the window and its margins, and fewer channels in
+  the sum. For Laura: the low-frequency noise of the front-end (0.33
+  MHz), the 18 MHz pickup, and what the dead channels are connected to.
+
 ### The 39 V peak is the 1275 keV line: the trigger loses the 511 keV events below 40 V (`src/py/offline.py`, bias scan at 196 K)
 
 - Correction by seed channel (offline.py, new charge Q_0_pos = Q_0_eq
