@@ -8,6 +8,7 @@ using Statistics
 using Dates
 
 export moving_average, common_mode, dead_cm, interpolate_cm, channel_baseline_line!, pulse_search, windows,
+       control_window_adjacent, channel_charges_adjacent,
        channel_charges, matched_filter, spe_candidates, read_template,
        process_event, pass
 
@@ -149,6 +150,52 @@ function channel_charges(y::AbstractMatrix, nbase::Integer, lo, hi, clo, chi, ns
 end
 
 """
+    control_window_adjacent(hi, n, nb, na, ns) -> (clo, chi, ok)
+
+Control window of `n` samples in the tail of the record with `na` samples left
+after it for its baseline: `ns - na - n + 1 : ns - na`; `ok` is false when its
+`nb` baseline samples before it would overlap the charge window ending at `hi`.
+"""
+function control_window_adjacent(hi::Integer, n::Integer, nb::Integer, na::Integer, ns::Integer)
+    chi = ns - na
+    clo = chi - n + 1
+    ok = clo - nb > hi && clo >= 1
+    return clo, chi, ok
+end
+
+"""
+    channel_charges_adjacent(y, lo, hi, clo, chi, nb, na, nsm, dt) -> (q, qctrl, imaxc)
+
+Per channel (columns of `y`): baseline = mean of the `nb` samples before the
+window and the `na` samples after it (clipped to the record); charge
+`dt * sum(y - baseline)` over `lo:hi`; the same, with its own adjacent baseline,
+over the control window `clo:chi` (NaN when `clo < 1`); and the sample of the
+maximum of the moving average of `y - baseline` inside the window.
+"""
+function channel_charges_adjacent(y::AbstractMatrix, lo, hi, clo, chi, nb::Integer, na::Integer, nsm, dt)
+    ns, nch = size(y)
+    q = zeros(Float64, nch)
+    qc = fill(NaN, nch)
+    imx = zeros(Int, nch)
+    blo, bhi = max(1, lo - nb), min(ns, hi + na)
+    cblo, cbhi = max(1, clo - nb), min(ns, chi + na)
+    for c in 1:nch
+        yc = @view y[:, c]
+        nbase = (lo - blo) + (bhi - hi)
+        Bc = (sum(@view yc[blo:lo - 1]) + sum(@view yc[hi + 1:bhi])) / nbase
+        q[c] = dt * (sum(@view yc[lo:hi]) - Bc * (hi - lo + 1))
+        if clo >= 1
+            ncb = (clo - cblo) + (cbhi - chi)
+            Bcc = (sum(@view yc[cblo:clo - 1]) + sum(@view yc[chi + 1:cbhi])) / ncb
+            qc[c] = dt * (sum(@view yc[clo:chi]) - Bcc * (chi - clo + 1))
+        end
+        sm = moving_average(yc[lo:hi] .- Bc, nsm)
+        imx[c] = lo - 1 + argmax(sm)
+    end
+    return q, qc, imx
+end
+
+"""
     matched_filter(x, T) -> z
 
 Least-squares height of a pulse of shape `T` (odd length, peak 1 at the centre)
@@ -264,8 +311,20 @@ function process_event(w::AbstractMatrix, p)
     # 5. pulse search, windows
     Sh, imax, H, irise = pulse_search(S, p.nsm)
     lo, hi, clo, chi, short = windows(imax, p.a, p.b, ns)
+    room_before = lo - p.nb >= 1                     # the full pre-window is in the record
+    room_after = hi + p.na <= ns                     # the after-window is in the record
+    whole = imax - p.a >= 1 && room_after            # the window and its after-window are in the record
+    nb_av = min(p.nb, lo - 1)                        # pre-window samples the record has
+    nb_used = nb_av >= p.nb_min ? nb_av : 0          # below the floor, the after-window alone
     # 6. per-channel charges and times
-    q, qctrl, imx = channel_charges(y, p.nbase, lo, hi, clo, chi, p.nsm, p.dt)
+    if p.chbase == "adjacent"
+        n = hi - lo + 1
+        clo, chi, ok = control_window_adjacent(hi, n, nb_used, p.na, ns)
+        short = !ok
+        q, qctrl, imx = channel_charges_adjacent(y, lo, hi, ok ? clo : 0, chi, nb_used, p.na, p.nsm, p.dt)
+    else
+        q, qctrl, imx = channel_charges(y, p.nbase, lo, hi, clo, chi, p.nsm, p.dt)
+    end
     # 7. SPE candidates per channel, on x minus its own median
     Ht = (length(p.T) - 1) ÷ 2
     rlo = max(ns - p.ntail + 1, Ht + 1)
@@ -284,7 +343,9 @@ function process_event(w::AbstractMatrix, p)
         end
     end
     return (t_max = p.t[imax], H = H, t_rise = irise == 0 ? NaN : p.t[irise], chbase_skipped = nskip,
-            win = (lo, hi), ctrl = (clo, chi), short = short, baseline = B, rms = s1,
+            win = (lo, hi), ctrl = (clo, chi), short = short, room_before = room_before, room_after = room_after,
+            whole = whole, nb_used = nb_used,
+            baseline = B, rms = s1,
             S = S, q = q, qctrl = qctrl, tc = [p.t[i] for i in imx],
             spe_ch = spe_ch, spe_t = [p.t[i] for i in spe_i], spe_A = spe_A, spe_res = spe_res,
             spe_sigma = sigz)
@@ -321,14 +382,15 @@ list of digitizer channels used as the common mode for `cm = "dead"`.
 const DEAD = [19, 20, 21, 22, 23, 25, 27, 33, 35, 41, 46, 47]     # chanstat_doc.tex, 2026-10-14
 
 function pass(runpath::AbstractString, out::AbstractString; template::AbstractString,
-              events = nothing, cm::AbstractString = "dead", dead::AbstractVector{<:Integer} = DEAD,
+              events = nothing, cm::AbstractString = "none", dead::AbstractVector{<:Integer} = DEAD,
               cm_smooth::Integer = 125, edge::Integer = 32,
               nbase::Integer = 250, nsm::Integer = 64, window = (1000.0, 4000.0),
               tail_us::Real = 10.0, nsig::Real = 4.5, block::Integer = 200,
-              scale::Integer = 4, chbase::AbstractString = "end", guard_us::Real = 0.4,
-              post_window = (10.0, 12.0), verbose::Bool = true)
+              scale::Integer = 4, chbase::AbstractString = "adjacent", guard_us::Real = 0.4,
+              post_window = (10.0, 12.0), adj_before_us::Real = 1.0, adj_after_us::Real = 2.0,
+              adj_min_us::Real = 0.25, verbose::Bool = true)
     cm in ("dead", "interp", "median", "none") || throw(ArgumentError("cm must be dead, interp, median or none"))
-    chbase in ("end", "line") || throw(ArgumentError("chbase must be end or line"))
+    chbase in ("end", "line", "adjacent") || throw(ArgumentError("chbase must be end, line or adjacent"))
     T = read_template(template)
     run = openrun(runpath)
     try
@@ -342,6 +404,8 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
              cm = cm, edge = edge, dead_cols = dead_cols, cm_smooth = cm_smooth,
              chbase = chbase, pre_hi = run.pretrigger - round(Int, guard_us * 1000 / dt),
              post_lo = round(Int, post_window[1] * 1000 / dt), post_hi = round(Int, post_window[2] * 1000 / dt),
+             nb = round(Int, adj_before_us * 1000 / dt), na = round(Int, adj_after_us * 1000 / dt),
+             nb_min = round(Int, adj_min_us * 1000 / dt),
              dt = dt, t = time_axis(run), T = T,
              ntail = round(Int, tail_us * 1000 / dt), nsig = nsig)
         # per-event arrays
@@ -349,6 +413,8 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
         win_lo = zeros(Int32, nev); win_hi = zeros(Int32, nev)
         ctrl_lo = zeros(Int32, nev); ctrl_hi = zeros(Int32, nev)
         base = zeros(Float32, nev); rmss = zeros(Float32, nev)
+        room_b = zeros(Int8, nev); room_a = zeros(Int8, nev); ctrl_ok = zeros(Int8, nev)
+        shortw = zeros(Int8, nev); nbu = zeros(Int32, nev)
         sums = zeros(Int16, ns, nev)
         qc = zeros(Float32, nch, nev); qcc = zeros(Float32, nch, nev); tc = zeros(Float32, nch, nev)
         spes = zeros(Float32, nch, nev)
@@ -366,6 +432,8 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
                 win_lo[k], win_hi[k] = r.win .- 1          # 0-based in the file
                 ctrl_lo[k], ctrl_hi[k] = r.ctrl .- 1
                 base[k] = r.baseline; rmss[k] = r.rms
+                room_b[k] = r.room_before; room_a[k] = r.room_after; ctrl_ok[k] = !r.short
+                shortw[k] = !r.whole; nbu[k] = r.nb_used
                 for i in 1:ns
                     v = round(r.S[i] * scale)
                     if abs(v) > lim
@@ -393,6 +461,8 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
             g["t_max"] = t_max; g["H"] = Hs; g["t_rise"] = t_rise
             g["win_lo"] = win_lo; g["win_hi"] = win_hi; g["ctrl_lo"] = ctrl_lo; g["ctrl_hi"] = ctrl_hi
             g["baseline"] = base; g["rms"] = rmss
+            g["room_before"] = room_b; g["room_after"] = room_a; g["ctrl_ok"] = ctrl_ok
+            g["short"] = shortw; g["nb_used"] = nbu
             ds = create_dataset(f, "sum", Int16, (ns, nev), chunk = (ns, min(nev, 50)), deflate = 4)
             ds[:, :] = sums
             attrs(ds)["scale"] = scale
@@ -420,6 +490,8 @@ function pass(runpath::AbstractString, out::AbstractString; template::AbstractSt
             A["dead"] = collect(Int, dead); A["cm_smooth"] = cm_smooth
             A["chbase"] = chbase; A["guard_us"] = Float64(guard_us); A["post_window_us"] = collect(Float64, post_window)
             A["chbase_skipped_events"] = nskipped
+            A["adj_before_us"] = Float64(adj_before_us); A["adj_after_us"] = Float64(adj_after_us)
+            A["adj_min_us"] = Float64(adj_min_us)
             A["window_ns"] = collect(Float64, window); A["tail_us"] = Float64(tail_us); A["nsigma"] = Float64(nsig)
             A["template_file"] = abspath(template); A["template"] = T
             A["events_first"] = first(ev) - 1; A["events_last"] = last(ev) - 1

@@ -1,0 +1,56 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\code{chanmap.py}: the array on the face of the crystal}
+\author{BGOTSCAN}
+\date{2026-10-15}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+One figure of the 64 SiPMs at their positions on the face of the crystal,
+from \code{src/channel\_map.csv}, each cell labelled with its digitizer
+channel, the twelve dead channels in grey and the four high-gain channels
+in orange. It keeps the dead block in sight in the notes.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/chanmap.py [--dead LIST] [--ringers LIST] [--save NAME]
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{l l p{80mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{--dead LIST} & 19,20,21,22,23,25,27,33,35,41,46,47 & dead channels (\code{chanstat\_doc.tex}) \\
+\code{--ringers LIST} & 11,12,48,49 & high-gain channels (\code{spe\_doc.tex}) \\
+\code{--save NAME} & & save the figure as \code{src/py/plots/NAME\_chanmap.png} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Each SiPM is drawn as a 6~mm square at its $(x, y)$; the axes are in mm,
+$x$ along the columns, $y$ decreasing with the row, as the map file
+defines them.
+
+\section{Example}
+
+\begin{lstlisting}
+python3 src/py/chanmap.py --save array      # docs/figs/chanmap.png
+\end{lstlisting}
+
+\end{document}

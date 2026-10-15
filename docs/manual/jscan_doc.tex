@@ -275,7 +275,11 @@ option & default & meaning \\
 \code{--out DIR} & \code{pass/} (repository, not in git) & output directory; the file is \code{DIR/RUN\_pass.h5} \\
 \code{--events a:b} & all & range of events, 1-based \\
 \code{--template FILE} & \code{src/spe\_template\_RUN.csv} & SPE pulse shape (\code{template.py}); required \\
-\code{--cm M} & \code{dead} & common-mode estimate: \code{dead}, \code{interp}, \code{median}, \code{none} (\code{selection\_doc.tex}, step~5) \\
+\code{--cm M} & \code{none} & common-mode estimate: \code{none} (default since 2026-10-15: the channels share nothing within a record, and a common mode built from other channels adds their noise, \code{wavefit\_doc.tex}), \code{dead}, \code{interp}, \code{median} (\code{selection\_doc.tex}, step~5) \\
+\code{--chbase M} & \code{adjacent} & per-channel baseline: \code{adjacent}, the mean of the samples before and after the window; \code{end}, the median of the last $N$ samples; \code{line}, a line through the pre-trigger and a post-pulse region \\
+\code{--adj-before B} & 1 & pre-window: \us{} of samples before the window in the adjacent baseline, or what the record has of them \\
+\code{--adj-after A} & 2 & after-window: \us{} of samples after the window in the adjacent baseline \\
+\code{--adj-min M} & 0.25 & floor of the pre-window in \us{}; with fewer samples available the baseline uses the after-window alone \\
 \code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & channels whose mean is the common mode for \code{dead} \\
 \code{--cm-smooth N} & 125 & moving-average width of that mean, in samples \\
 \code{--edge E} & 32 & samples averaged at each end of $W$ for the interpolation \\
@@ -314,10 +318,25 @@ block of events the raw array is (samples, channels, events).
   $t_{\rm rise}$ = last sample before $i_{\max}$ with $\hat S < H/2$ (0 if
   none); charge window $[i_{\max} - a, i_{\max} + b]$ clipped, $n$ samples;
   control window as in \code{selection\_doc.tex} step~8.
-\item Per channel: $B_c$ = median of $y_c$ over the last $N$ samples; $q_c
-  = \Delta t \sum_{\rm window} (y_{c,i} - B_c)$; $q_c^{\rm ctrl}$ the same
-  over the control window; $t_c$ = time of the maximum of the moving
-  average (width $N_{\rm sm}$) of $y_c - B_c$ inside the window.
+\item Per channel, with \code{adjacent}: the pre-window is the $n_b$
+  samples before the charge window, or the $n_b' \le n_b$ the record has
+  of them; when $n_b' < n_{\min}$ it is dropped ($n_b' = 0$). The
+  after-window is the $n_a$ samples after the charge window. $B_c$ = mean
+  of $y_c$ over the pre-window and the after-window;
+  $q_c = \Delta t \sum_{\rm window} (y_{c,i} - B_c)$. The control window
+  is the last $n$ samples before the final $n_a$ of the record,
+  $[N_s - n_a - n + 1, N_s - n_a]$, and $q_c^{\rm ctrl}$ is the same
+  charge over it with its own pre-window of $n_b'$ samples and
+  after-window of $n_a$, NaN when its pre-window would overlap the charge
+  window (flag \code{ctrl\_ok}). Flags: \code{short} when the charge
+  window starts before the record or its after-window ends after it (the
+  SHORT class of \code{offline.py}); \code{room\_before} when the full
+  pre-window is in the record, \code{room\_after} when the after-window
+  is; \code{nb\_used} $= n_b'$.
+  With \code{end}: $B_c$ = median of $y_c$ over the last $N$ samples, and
+  the control window of \code{selection\_doc.tex} step~8. $t_c$ = time of
+  the maximum of the moving average (width $N_{\rm sm}$) of $y_c - B_c$
+  inside the window.
 \item SPE, per channel, on $x_c$ minus its own median over the record: the
   matched filter $z_i = \sum_j T_j x_{c,i+j} / \sum_j T_j^2$ in the search
   region $R$ (last $T$ \us{}, $H$ samples trimmed at both ends, $H$ the
@@ -344,6 +363,8 @@ dataset & shape & type & content \\
 \code{events/win\_lo}, \code{events/win\_hi} & (nev,) & Int32 & charge window, 0-based sample indices, inclusive \\
 \code{events/ctrl\_lo}, \code{events/ctrl\_hi} & (nev,) & Int32 & control window \\
 \code{events/baseline}, \code{events/rms} & (nev,) & Float32 & $B$ and $\sigma_1$ of the sum \\
+\code{events/short}, \code{events/room\_before}, \code{events/room\_after}, \code{events/ctrl\_ok} & (nev,) & Int8 & flags of step 6: window not whole; full pre-window in the record; after-window in the record; control charge valid \\
+\code{events/nb\_used} & (nev,) & Int32 & pre-window samples used in the baseline, $n_b'$ \\
 \code{sum} & (nsamp, nev) & Int16 & $4\,S_i$ rounded (attribute \code{scale} = 4; values beyond $\pm 8191$ clipped and counted in the attribute \code{clipped}) \\
 \code{qc}, \code{qc\_ctrl} & (nch, nev) & Float32 & $q_c$, $q_c^{\rm ctrl}$ in ADC\,ns, all channels, no threshold \\
 \code{tc} & (nch, nev) & Float32 & $t_c$ in ns from the trigger \\

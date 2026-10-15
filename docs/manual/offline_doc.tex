@@ -31,7 +31,7 @@ fits the 511~keV photopeak of each, fits the decay of the average pulse,
 and writes a per-event table and a summary for the comparison across runs
 (\code{scan.py}). It reads only the pass output and the equalization table,
 runs in seconds, and is a batch script: no steps, one table on the
-terminal, four figures. The definitions of the classes and of the charges
+terminal, six figures. The definitions of the classes and of the charges
 are those of \code{selection\_doc.tex} (steps 6 to 12); this document
 gives what is new: the charge noise from the data, the equalized charges,
 the photopeak and decay fits, the output.
@@ -58,7 +58,7 @@ option & default & meaning \\
 \code{--decay-range A,B} & \code{0.5,8} & \us{} after the maximum over which the decay is fitted to the average pulse; set per temperature \\
 \code{--decay-model N} & 2 & one or two exponentials in the decay fit \\
 \code{--veto V} & 2 & \us{} beyond each edge of the charge window where no second maximum is searched (pile-up) \\
-\code{--save NAME} & off & figures saved as \code{src/py/plots/NAME\_classes.png}, \code{NAME\_spectra.png}, \code{NAME\_pulse.png}, \code{NAME\_pileup.png}; otherwise shown \\
+\code{--save NAME} & off & figures saved as \code{src/py/plots/NAME\_classes.png}, \code{NAME\_spectra.png}, \code{NAME\_pulse.png}, \code{NAME\_pileup.png}, \code{NAME\_seedmap.png}, \code{NAME\_prewindow.png}; otherwise shown \\
 \code{--out FILE} & \code{pass/RUN\_offline.h5} & per-event table; the summary goes next to it as \code{RUN\_offline.json} \\
 \bottomrule
 \end{tabular}
@@ -128,7 +128,12 @@ multiplicity $M$ is the number of live channels with $q_c > K\sigma_{q,c}$.
 
 \section{Per run}
 
-\paragraph{Classes.} The fraction of EMPTY, REAL and TAIL events, the
+\paragraph{Classes.} EMPTY (no pulse above the cut), TAIL (no rising
+edge), SHORT (the charge window starts before the record or its
+after-window ends after it: the flag \code{short} of the pass; in older
+passes with the adjacent baseline, no room for the full pre-window or the
+after-window; before that, never) and REAL, decided in that order.
+The fraction of each, the
 fraction of REAL events with pile-up, and the histogram of $\Delta t_{\rm
 pile}$ (figure \code{pileup}): a pile-up of random second pulses is flat
 in $\Delta t$; a pile of entries just outside the window would be the tail
@@ -194,6 +199,17 @@ overfit (one parameter per 40 events at least) and, when the spectrum
 holds two lines of similar weight, a meaningless one, since the located
 peak of a group may be either line (196K\_39d5V\_th20, 2026-10-15).
 
+\paragraph{The pre-window.} The per-channel baseline of the pass uses
+the pre-window the record has, up to its full length $n_b$
+(\code{nb\_used}, with $n_b$ from the attribute \code{adj\_before\_us}).
+The REAL events without pile-up are split into those with the full
+pre-window, those with a partial one and those without (after-window
+alone), and the photopeak of $Q^{\rm eq}_0$ and $Q^{\rm pos}_0$ is fitted
+in each group: the positions must agree, since the groups differ only in
+the baseline and in the time of the trigger. One line per group on the
+terminal, with the number of events and the peak with its error; figure
+\code{prewindow}: the three spectra of each charge with their fits.
+
 \paragraph{Average pulse and decay time.} The mean of $S$ over the REAL
 events without pile-up, each shifted so that its $i_{\max}$ falls on a
 common sample, over the samples all of them cover. The decay is fitted
@@ -203,22 +219,34 @@ exponentials, $A_1 e^{-t/\tau_1} + A_2 e^{-t/\tau_2} + C$, $\tau_1 <
 single exponential, it decays fast first and slowly after), or with one
 (\code{--decay-model 1}). The fraction of the light in the fast component
 is $f_1 = A_1 \tau_1 / (A_1 \tau_1 + A_2 \tau_2)$. When one component
-carries more than 95\% of the light or the second has no error, the two
+carries more than 95\% of the light, or the two time constants agree
+within 10\%, or the error of either is larger than half its value, the two
 exponentials are degenerate and the single-exponential fit is reported
-instead, with \code{decay\_model} = 1 in the summary. The decay time of the
+instead, with \code{decay\_model} = 1 in the summary and a line on the
+terminal saying so. The decay time of the
 run reported to \code{scan.py} is $\tau_2$, the slow component, with
 $\tau_1$ and $f_1$ beside it. Figure \code{pulse}: the average pulse and
 the fit, linear and logarithmic.
 
 \section{Output}
 
+\paragraph{Noise of each estimator.} The same sum that defines an
+estimator, taken over the control charges of the pass with the masks of
+the event (the positive channels, the kept channels, the gain factors,
+the seed-channel factor), is the charge of an empty window with the
+estimator's own selection; its clipped rms over the selected events with
+a valid control window is the noise of the estimator, printed in
+ADC\,ns, as the FWHM term $2.355\,\sigma/\mu$, and as the width with that
+term subtracted in quadrature.
+
 \paragraph{Table.} One line per estimator: position (ADC\,ns and
 photoelectrons), error, width, FWHM/position, number of events in the
-fit; then the class fractions, the pile-up fraction, $\sigma_Q$, the
-decay time, and the channels without an equalization factor.
+fit, noise, noise term and width after it; then the class fractions, the
+pile-up fraction, $\sigma_Q$, the decay time, and the channels without an
+equalization factor.
 
 \paragraph{Per-event file} \code{pass/RUN\_offline.h5}: datasets of length
-nev: \code{index}, \code{cls} (0 EMPTY, 1 REAL, 2 TAIL), \code{pileup},
+nev: \code{index}, \code{cls} (0 EMPTY, 1 REAL, 2 TAIL, 3 SHORT), \code{pileup},
 \code{dt\_pile}, \code{t\_max}, \code{H}, \code{t\_rise}, \code{Q},
 \code{Q\_ctrl}, \code{Q\_all}, \code{Q\_0}, \code{Q\_kept},
 \code{Q\_all\_eq}, \code{Q\_0\_eq}, \code{Q\_kept\_eq}, \code{Q\_0\_pos},
@@ -228,9 +256,10 @@ input files as attributes.
 
 \paragraph{Summary} \code{pass/RUN\_offline.json}: the run conditions
 copied from the pass (T1, T2, T3, bias, trigger rate), the options, the
-class fractions, $\sigma_Q$, the decay time with its error, and for each
-estimator the photopeak position, error, width and resolution. This is
-what \code{scan.py} reads.
+class fractions, $\sigma_Q$, the decay time with its error, for each
+estimator the photopeak position, error, width, resolution and noise, and
+the photopeak of each pre-window group (\code{prewindow}). This is what
+\code{scan.py} reads.
 
 \section{\code{mains.py}: is the baseline drift the power line?}
 

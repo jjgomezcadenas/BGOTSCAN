@@ -1,9 +1,10 @@
 # BGOTSCAN
 
 Analysis of the BGO temperature scan of 2026-10-02: a BGO crystal read out by
-64 SiPMs, held in a cryostat at temperatures between 128 K and 197 K, with the
-SiPM bias voltage changed with temperature (and scanned at 185 K and 196 K),
-irradiated by a 22Na source at a fixed position. The goal is the relative
+64 SiPMs, held in a cryostat at temperatures between 128 K and 197 K, plus
+one run near ambient at 253 K, with the SiPM bias voltage changed with
+temperature (and scanned at 185 K and 196 K), irradiated by a 22Na source at
+a fixed position. The goal is the relative
 light yield and the energy resolution at 511 keV as a function of temperature
 and overvoltage. Findings and decisions are logged in `ANALYSIS.md`.
 
@@ -17,9 +18,14 @@ Inside:
 - `data_cryo/*.h5`: one HDF5 file per run, written by WebDump (CAEN DT2745,
   Scope firmware). The name gives the crystal temperature (T3) in K, the SiPM
   bias (`39d5V` = 39.5 V) and the trigger threshold in ADC counts, e.g.
-  `185K_39d5V_th19.h5`. Each file holds 5000 events of 64 channels x 3000
-  samples at 125 MHz (8 ns), with 200 pre-trigger samples; about 1 GB each,
-  LZF-compressed.
+  `185K_39d5V_th19.h5`. The twelve runs from 128 to 197 K hold 5000 events
+  of 64 channels x 3000 samples at 125 MHz (8 ns), with 200 pre-trigger
+  samples; about 1 GB each, LZF-compressed. The 253 K run
+  (`253K_41V_th22.h5`, fetched 2026-10-15) holds 6000 events of 700
+  samples with 100 pre-trigger samples, 0.5 GB: the record length is set
+  per run to the pulse, which gets longer as the crystal gets colder, so
+  the scripts must read it from the file and the passes take their
+  windows per run.
 - `temperatures.txt`: the three thermometer readings per run (T1 on the
   aluminium case, T2 under it, T3 on the back face of the crystal).
 - `README.txt`, `files.tex`, `analysis.ipynb`: Laura's notes and the
@@ -40,11 +46,17 @@ The file layout (datasets and attributes) is documented in
 - `src/h5lzf/`: the LZF compression filter of h5py as an HDF5 plugin, needed
   for Julia to read the LZF-compressed files (h5py has it built in). See
   below.
-- `docs/`: the notes (`pre_analysis.tex`: the data, the detector and the
-  single photoelectron; the analysis note to come). `docs/manual/`: one LaTeX
-  document per module or script (`jscan_doc.tex`, `wfview_doc.tex`,
-  `runinfo_doc.tex`, `selection_doc.tex`, `spe_doc.tex`, `template_doc.tex`,
-  `chanstat_doc.tex`, `bgo_doc.tex`). The figures of both are in `docs/figs/`.
+- `docs/`: the note `antarctica.tex` ("BGO scan: the Antarctica runs"):
+  the detector, the acquisition, the structure of the events and of the
+  noise, the single photoelectron, and the chain from the event to the
+  light output, the decay time and the energy resolution, on the two runs
+  at 196 K; the general part the notes on the other temperatures refer
+  to. `docs/manual/`: one LaTeX document per module or script
+  (`jscan_doc.tex`, `wfview_doc.tex`, `runinfo_doc.tex`,
+  `selection_doc.tex`, `spe_doc.tex`, `template_doc.tex`,
+  `chanstat_doc.tex`, `chanmap_doc.tex`, `offline_doc.tex`,
+  `cmnoise_doc.tex`, `wavefit_doc.tex`, `noisetoy_doc.tex`,
+  `bgo_doc.tex`). The figures of both are in `docs/figs/`.
 - `nb/`: notebooks received from the authors, kept as received.
 - `ANALYSIS.md`: the dated log of findings, decisions and open questions.
 

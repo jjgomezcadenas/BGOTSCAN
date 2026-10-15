@@ -1,0 +1,196 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{wavefit.py}: the slow wave per channel and a baseline that follows it}
+\author{BGOTSCAN}
+\date{2026-10-15}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+\code{cmnoise.py} found the noise of the charge to be a slow wave near
+0.33~MHz, a 3~\us{} period, present in every channel, dead or live, with
+its own phase per channel, and in the live channels a slower drift on
+top (\code{cmnoise\_doc.tex}). The charge of a channel over the 5~\us{}
+window, with the baseline from the last 2~\us{} of the record, carries
+2400~ADC\,ns of this against 700 for white noise. A running baseline
+cannot follow a 3~\us{} wave without following the 2.7~\us{} pulse, but
+a baseline model fitted on the pulse-free samples around the window and
+evaluated inside it can, if the wave keeps its phase over the window.
+This script measures the wave where there is no signal, the tail of the
+record in every channel and the whole record in the dead channels, and
+tests the baseline model on an empty window: the scatter of the charge of
+a window with nothing in it, with the current baseline and with the
+fitted one, is the gain of the method. Nothing here touches a pulse.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/wavefit.py RUN [--events 0-299] [--tail 12] [--window 1,5] [--before 1] [--smooth 62]
+        [--band 0.2,1.0] [--dead LIST] [--offline FILE] [--examples 3] [--save NAME]
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{l l p{78mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{RUN} & & run name or path of the raw file \\
+\code{--events a-b} & \code{0-299} & events read (0-based) \\
+\code{--tail T} & 12 & the tail: the last $T$~\us{} of the record \\
+\code{--window S,L} & \code{1,5} & the empty window: starts $S$~\us{} into the tail, lasts $L$~\us \\
+\code{--before B} & 1 & samples before the window used by the fit, in \us{} (the pre-trigger of a real pulse) \\
+\code{--after A} & 2 & samples right after the window averaged for the ``after'' baseline, in \us \\
+\code{--smooth N} & 62 & running-mean width in samples (0.5~\us) for the autocorrelation \\
+\code{--band a,b} & \code{0.2,1.0} & MHz band where the wave's frequency is searched \\
+\code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & dead channels \\
+\code{--offline FILE} & \code{pass/RUN\_offline.h5} & per-event classes; without it every event is used \\
+\code{--examples N} & 3 & events drawn in the by-eye figure \\
+\code{--save NAME} & & save the figures as \code{src/py/plots/NAME\_wavefit\_*.png} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Definitions}
+
+Waveforms minus the WebDump baseline of the channel; the events are the
+REAL events without pile-up of \code{offline.py} whose maximum lies more
+than 4~\us{} before the tail, as in \code{cmnoise.py}. The tail is the last
+$T$~\us{} of the record. Inside it, the empty window $W$ runs from $S$ to
+$S + L$~\us{} after the start of the tail; the fit region $F$ is the $B$~\us{}
+before the window and everything after it to the end of the record; the
+end-of-record baseline region $E$ is the last 250 samples, as in the pass.
+
+\paragraph{Autocorrelation.} Per channel and event, the tail smoothed
+with a running mean of $N$ samples, minus its mean; its autocorrelation
+$\rho(\tau)$ for lags $\tau$ from 0 to 10~\us, normalised to 1 at zero
+lag; averaged over events and over the channels of each class, dead and
+live. The white noise contributes a spike of the width of the smoothing
+at zero lag; the wave gives lobes alternating in sign every half period,
+as many as the periods over which it keeps its phase; a drift gives one
+lobe. Figure \code{autocorr}: left, $\rho(\tau)$ for the two classes;
+right, the rms of the running mean of one channel against its width,
+from one sample to 5~\us, averaged over channels and 60 events, with the
+white-noise line $\sigma/\sqrt N$ (the counterpart of the toy figure of
+\code{noisetoy\_doc.tex}). The terminal gives, per class, the lag of the first zero
+crossing, the depth of the first negative lobe and the height of the
+second positive lobe, the quantities that say how far the tail can
+predict the wave.
+
+\paragraph{Frequency.} Per channel, the power spectrum of the raw tail
+averaged over events, and the frequency of its maximum within the band
+$[a, b]$~MHz, above the low-frequency rise and below the white floor.
+Figure \code{spectra}: all channels overlaid, dead in red, live in blue,
+and the $8\times8$ map of the peak frequency. The run's wave frequency
+$f_0$ is the median over the live channels and is the frequency used by
+the baseline model.
+
+\paragraph{Baselines of the empty window.} Four charges of $W$ per
+channel and event, all in ADC\,ns:
+\begin{align*}
+  q_E &= \Delta t \sum_{i \in W} (x_i - \bar x_E), \\
+  q_A &= \Delta t \sum_{i \in W} (x_i - \bar x_A), \\
+  q_{\rm line} &= \Delta t \sum_{i \in W} (x_i - a - b\,t_i), \\
+  q_{\rm wave} &= \Delta t \sum_{i \in W} \big(x_i - a - b\,t_i - c \sin 2\pi f_0 t_i - d \cos 2\pi f_0 t_i\big),
+\end{align*}
+with $\bar x_E$ the mean over $E$ (the pass), $\bar x_A$ the mean over
+the $A$~\us{} right after the window, and $a, b$ or $a, b, c, d$
+from a linear least-squares fit of the model to the samples of $F$
+(the window itself excluded). The scatter of each charge over the
+events, $\sigma_E$, $\sigma_{\rm line}$, $\sigma_{\rm wave}$, is the
+noise that method would leave on a real charge, since the window is
+empty; the gain of a method is $\sigma_E / \sigma$. The white-noise
+floor is $\sigma_{\rm w} \sqrt{n_W}\,\Delta t$ with $\sigma_{\rm w}$ the
+clipped rms of the channel's samples, 700~ADC\,ns for 4 counts and 625
+samples, raised by the noise of the baseline itself.
+
+\paragraph{Figures.} \code{examples}: for \code{--examples} events, one
+dead and one live channel, the tail with the window shaded, the
+end-of-record level as a flat line and the two fitted models drawn
+through the window, so that one sees whether a model follows the wave
+into the window. \code{hist}: the histograms of $q_{E+\rm cm}$, $q_E$, $q_{\rm line}$,
+$q_{\rm wave}$ over channels and events, dead and live separately, with
+their scatters. \code{gainmap}: the $8\times8$ map of
+$\sigma_E / \sigma_{\rm wave}$ per channel. \code{sum}: the same four
+charges for the sum of the live channels (the per-channel residuals
+summed), where the weak common part of the noise and the cost of the
+dead-channel common mode show.
+
+\paragraph{The pass's common mode.} A fourth charge, $q_{E+\rm cm}$: the
+125-sample running mean of the dead-channel mean subtracted from every
+channel, as the pass does with \code{--cm dead}, then the end-of-record
+baseline. Its scatter on the sum is compared with the noise of the dead
+channels' mean times the number of live channels, $n_l\,\sigma_E^{\rm
+dead}/\sqrt{n_d}$, added in quadrature to the raw sum.
+
+\paragraph{Terminal.} Per class: the four scatters, the white floor and
+the gains, for the channels and for the sum; $f_0$ and its spread
+over channels; the autocorrelation numbers above.
+
+\section{Findings (2026-10-15, 195K\_41V\_th20 and 197K\_39V\_th20, 300 events each)}
+
+\begin{itemize}
+\item \emph{There is no wave.} The single-channel spectra are a smooth
+  rise below 1~MHz with no line in any channel, dead or live; the peak
+  search in the band returns its lower edge (0.25~MHz, the third
+  frequency bin). The autocorrelation has one lobe, zero at 1.5~\us, and
+  nothing after: the slow noise forgets itself within 2~\us. The
+  ``0.33~MHz oscillation'' read off the mean of the channels in
+  \code{cmnoise\_doc.tex} was a feature of a noisy spectrum of the mean
+  at 0.08~MHz resolution and of the eye; withdrawn. The slow noise is
+  broadband, $1/f$-like, per channel.
+\item \emph{Dead and live channels carry the same noise.} Empty-window
+  charge with the end-of-record baseline: 3473~ADC\,ns for the dead
+  channels, 3581 for the live, against a white floor of 756, at both
+  biases. The statement of \code{chanstat\_doc.tex} that the dead channels
+  show the charge noise of white noise is contradicted by this direct
+  measurement and should be rechecked there.
+\item \emph{A baseline fitted around the window gains a factor 1.37}, a
+  line through the 1~\us{} before and the 6~\us{} after: 3500 to 2550 per
+  channel; the mean of the 2~\us{} right after the window gains 1.14
+  (3050); a line fitted on the after side alone extrapolates its slope
+  into the window and loses (5100). The sinusoid adds nothing (2600 to
+  2770), as a broadband noise cannot be predicted inside the window
+  from outside. The residual is 3.4 times the white floor: the $1/f$
+  noise inside the window itself.
+\item \emph{The dead-channel common mode of the pass is the noise of
+  the sum.} The raw sum of the 52 live channels over the empty window
+  scatters by 29\,000 at 41~V and 36\,000 at 39~V, against 25\,800 for
+  independent channels: the common part is small. After subtracting the
+  running mean of the 12 dead channels, as the pass does, the scatter is
+  60\,000 and 65\,000: the dead channels' own slow noise, $3473/\sqrt{12}
+  \times 52 = 52\,000$, added in quadrature (59\,700 and 63\,600
+  predicted). This is the 66\,000 of \code{offline.py}. The dead channels
+  share nothing with the live ones within the record (correlation 0.00),
+  so the subtraction removes nothing and adds their noise; per channel it
+  costs 4\% (3581 to 3719), on the sum a factor 2.
+\end{itemize}
+
+Consequence: drop the common-mode subtraction (\code{--cm none} in the
+pass) and take the per-channel baseline from a line fitted around the
+window. The sum's noise then falls from 66\,000 to about 27\,000, and the
+per-channel noise from 3700 to 2600. The $1/f$ noise within the window
+remains, 3.4 times white, and is a hardware question for the front-end.
+
+\section{Examples}
+
+\begin{lstlisting}
+python3 src/py/wavefit.py 195K_41V_th20 --save wf195
+python3 src/py/wavefit.py 197K_39V_th20 --save wf197
+\end{lstlisting}
+
+\end{document}

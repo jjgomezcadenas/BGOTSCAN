@@ -121,7 +121,10 @@ of the live and dead means, and the mean correlation between channels
 (live--live, dead--dead, live--dead). A constant offset over the record
 cancels in the charge, which takes its baseline from the same record;
 this is the quantity that was read as a baseline scatter following the
-trigger rate (\code{ANALYSIS.md}, 2026-10-15 morning).
+trigger rate (\code{ANALYSIS.md}, 2026-10-15 morning). Figure
+\code{offsets}: the distributions of the live and dead mean offsets,
+their scatter plot, and the correlation matrix of the per-channel
+offsets between events.
 
 \paragraph{Kicks.} The median over the live channels of the record
 (robust against the lit channels), averaged over the events around the
@@ -153,6 +156,11 @@ from \code{pass/RUN\_offline.json} when present) times the tail length:
   the dead mean: the pulse of the median channel, light and not pickup;
   the ``excursion of 200 counts on the sum at the trigger'' of
   \code{selection\_doc.tex} is this step times 52.
+\item \emph{Between events} the per-channel offsets are correlated by
+  digitizer group: 0.5 to 0.6 within each block of 16 channels, 0.2 to
+  0.3 across blocks, dead and live alike (figure \code{offsets}, added
+  later the same day): an offset of the digitizer's groups from record
+  to record, removed by any baseline taken inside the record.
 \item \emph{Within the record} the common noise among the live channels
   is weak: pairwise correlation 0.03 of the 1~\us{} running means, with
   no block structure (the four SiPM matrices 0.02 to 0.05, within and
@@ -166,7 +174,12 @@ from \code{pass/RUN\_offline.json} when present) times the tail length:
   against 0.047 for white noise, the dead mean 0.181 against 0.098, the
   same excess once the number of channels is accounted for, and the
   spectra of both rise below 0.3~MHz the same way. It is in the
-  front-end or the digitizer, not in the bias or the SiPMs.
+  front-end or the digitizer, not in the bias or the SiPMs. Its nature,
+  broadband $1/f$-like with a memory of 1.5~\us{} and no line, is
+  established on single channels by \code{wavefit.py}
+  (\code{wavefit\_doc.tex}); a periodic reading of the traces and of
+  the spectrum of the mean, made on this script's figures the same
+  evening, did not survive that measurement.
 \item \emph{Nothing depends on the bias or the trigger rate.} Every
   number above is the same at 41~V (225~kHz) and at 39~V (2.7~kHz):
   running-mean rms 0.117 and 0.118, correlations 0.03 and 0.03,

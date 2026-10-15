@@ -23,7 +23,7 @@ from bgo.plot import map8
 
 DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
 GAIN = REPO / "src" / "spe_gain_195K_41V_th20.csv"
-CLASSES = ("EMPTY", "REAL", "TAIL")
+CLASSES = ("EMPTY", "REAL", "TAIL", "SHORT")
 ESTIMATORS = ("Q", "Q_all", "Q_0", "Q_kept", "Q_all_eq", "Q_0_eq", "Q_kept_eq", "Q_0_pos")
 
 
@@ -80,6 +80,19 @@ def main():
         qc = f["qc"][:].astype(np.float64)                        # (nev, nch)
         qcc = f["qc_ctrl"][:].astype(np.float64)
         index = f["events/index"][:]
+        ev = f["events"]
+        # SHORT: the window or its after-window outside the record (flag of the pass); older passes with the adjacent
+        # baseline: no room for the full pre-window or the after-window; passes before that: never
+        if "short" in ev:
+            short = ev["short"][:] > 0
+        elif "room_before" in ev:
+            short = ~((ev["room_before"][:] > 0) & (ev["room_after"][:] > 0))
+        else:
+            short = np.zeros(len(index), bool)
+        ctrl_ok = ev["ctrl_ok"][:] > 0 if "ctrl_ok" in ev else np.ones(len(index), bool)
+        # pre-window samples used in the per-channel baseline, and the full pre-window
+        nb_full = int(round(float(A["adj_before_us"]) * 1000 / dt)) if "adj_before_us" in A else 0
+        nb_used = ev["nb_used"][:] if "nb_used" in ev else np.full(len(index), nb_full)
     nev, ns = S_all.shape
     t = (np.arange(ns) - pre) * dt
     a_ns, b_ns = (float(v) for v in args.window.split(",")) if args.window else win_pass
@@ -103,7 +116,7 @@ def main():
         lo, hi = sorted((im, j)); V[e] = Sh[lo:hi + 1].min()
     sigma_Q = clipped_rms(Qc)
     real = H >= args.nsigma * sN                 # the height of the smoothed pulse against the smoothed noise
-    cls = np.where(~real, 0, np.where(irise >= 0, 1, 2))
+    cls = np.where(~real, 0, np.where(irise < 0, 2, np.where(short, 3, 1)))     # EMPTY, REAL, TAIL, SHORT
     pile = (P2 > args.nsigma * sN) & (P2 - V > args.nsigma * sN)
     dt_pile = (i2 - imax) * dt
 
@@ -111,7 +124,8 @@ def main():
     live = np.array([c not in dead for c in channels])
     g = np.array([g_tab.get(c, 1.0) for c in channels])
     no_g = [c for c, l in zip(channels, live) if l and c not in g_tab]
-    sq = np.array([clipped_rms(qcc[:, k]) for k in range(len(channels))])
+    okc = ctrl_ok & np.isfinite(qcc).all(axis=1)
+    sq = np.array([clipped_rms(qcc[okc, k]) for k in range(len(channels))])
     qm = np.where(live, qc, 0.0)
     pos = qm > 0
     kept = qm > args.k * sq
@@ -121,6 +135,10 @@ def main():
     Q_all_eq = qe.sum(axis=1); Q_0_eq = (qe * pos).sum(axis=1); Q_kept_eq = (qe * kept).sum(axis=1)
     mult = (sig & live).sum(axis=1)
     est = dict(Q=Q, Q_all=Q_all, Q_0=Q_0, Q_kept=Q_kept, Q_all_eq=Q_all_eq, Q_0_eq=Q_0_eq, Q_kept_eq=Q_kept_eq)
+    # the same sums over the control charges, with the masks of the event: the noise of each estimator
+    qmc = np.where(live, np.nan_to_num(qcc), 0.0); qec = qmc / g
+    ctrl = dict(Q=Qc, Q_all=qmc.sum(axis=1), Q_0=(qmc * pos).sum(axis=1), Q_kept=(qmc * kept).sum(axis=1),
+                Q_all_eq=qec.sum(axis=1), Q_0_eq=(qec * pos).sum(axis=1), Q_kept_eq=(qec * kept).sum(axis=1))
     # the channel with the largest charge (a proxy for the position of the light) and its distance to the dead block
     cmap = read_map()
     xy = np.array([cmap.get(c, (np.nan, np.nan)) for c in channels])
@@ -177,6 +195,7 @@ def main():
     f_ev = f_seed[seed]
     no_f = sel & ~np.isfinite(f_ev)
     est["Q_0_pos"] = np.where(np.isfinite(f_ev), est["Q_0_eq"] / np.where(np.isfinite(f_ev), f_ev, 1.0), est["Q_0_eq"])
+    ctrl["Q_0_pos"] = np.where(np.isfinite(f_ev), ctrl["Q_0_eq"] / np.where(np.isfinite(f_ev), f_ev, 1.0), ctrl["Q_0_eq"])
     print(f"  Q_0_pos = Q_0_eq / f(seed channel), f from the peaks above; {int(no_f.sum())} of {int(sel.sum())} events "
           f"with a seed channel without factor (left as they are)")
     fits = {n: fit_photopeak(v[sel]) for n, v in est.items()}
@@ -188,6 +207,18 @@ def main():
             fi = fit_photopeak(vals[sel & m])
             print(f"    {lab:22s}: {int((sel & m).sum()):5d} events, " + (f"peak {fi['mu']:.4g}, FWHM {100 * fi['fwhm_rel']:.1f}%"
                   if fi["ok"] else f"no fit ({fi['why']})"))
+    # the pre-window: the events with the full pre-window against those with a partial one or none
+    pre_groups = (("full pre-window", nb_used >= nb_full), ("partial pre-window", (nb_used > 0) & (nb_used < nb_full)),
+                  ("after-window only", nb_used == 0))
+    pre_fits = {}
+    if nb_full > 0:
+        print(f"  pre-window of the per-channel baseline ({nb_full} samples when full), REAL without pile-up:")
+        for lab, m in pre_groups:
+            pre_fits[lab] = {n: fit_photopeak(est[n][sel & m]) for n in ("Q_0_eq", "Q_0_pos")}
+            line = f"    {lab:19s}: {int((sel & m).sum()):5d} events"
+            for n, fi in pre_fits[lab].items():
+                line += f"; {n} " + (f"peak {fi['mu']:.4g} +- {fi['err']:.2g}, FWHM {100 * fi['fwhm_rel']:.1f}%" if fi["ok"] else f"no fit ({fi['why']})")
+            print(line)
     # average pulse of the REAL events without pile-up, aligned on the maximum
     centre = 300
     acc = np.zeros(ns); cnt = np.zeros(ns)
@@ -200,9 +231,13 @@ def main():
     ok = np.isfinite(pulse)
     dec = fit_decay2(tp[ok], pulse[ok], t0d, t1d) if args.decay_model == 2 else fit_decay(tp[ok], pulse[ok], t0d, t1d)
     if args.decay_model == 2 and dec["ok"] and (not 0.05 < dec["f1"] < 0.95 or not np.isfinite(dec["err1"] + dec["err2"])
-                                               or dec["err2"] == 0):
-        dec = fit_decay(tp[ok], pulse[ok], t0d, t1d)             # one component carries all the light
+                                               or dec["err2"] == 0 or abs(dec["tau2"] - dec["tau1"]) < 0.1 * dec["tau2"]
+                                               or dec["err1"] > 0.5 * dec["tau1"] or dec["err2"] > 0.5 * dec["tau2"]):
+        # one component carries all the light, or the two time constants agree within 10%, or an error is larger
+        # than half its value: the two exponentials are degenerate
+        dec = fit_decay(tp[ok], pulse[ok], t0d, t1d)
         args.decay_model = 1
+        print("  decay: the two-exponential fit is degenerate, one exponential reported")
     if args.decay_model == 2 and dec["ok"]:
         dec["tau"], dec["err"] = dec["tau2"], dec["err2"]          # the slow component is "the" decay time
         dec_label = (f"tau1 {dec['tau1'] / 1000:.3f} +- {dec['err1'] / 1000:.3f} us ({100 * dec['f1']:.0f}% of the light), "
@@ -217,13 +252,19 @@ def main():
           f"q_pe {q_pe:.4g} ADC ns from A1 {a1:.2f} (gain table {args.gain.split('/')[-1]})")
     print(f"  classes: " + ", ".join(f"{n} {100 * frac[n]:.1f}%" for n in CLASSES)
           + f"; pile-up in REAL {100 * pile_frac:.1f}%; {sel.sum()} REAL without pile-up used")
-    print(f"  {'estimator':10s} {'peak ADCns':>11s} {'err':>7s} {'peak PE':>8s} {'PE/keV':>7s} {'sigma':>8s} {'FWHM/peak':>9s} {'n':>6s}")
+    noise = {n: clipped_rms(ctrl[n][sel & okc]) if n in ctrl else np.nan for n in est}      # ADC ns, from the control charges
+    print(f"  {'estimator':10s} {'peak ADCns':>11s} {'err':>7s} {'peak PE':>8s} {'PE/keV':>7s} {'sigma':>8s} {'FWHM/peak':>9s} {'n':>6s} "
+          f"{'noise':>7s} {'noise/peak':>10s} {'after':>6s}")
     for n, fi in fits.items():
         if fi["ok"]:
+            nt = 2.355 * noise[n] / fi["mu"] if np.isfinite(noise[n]) else np.nan
+            after = np.sqrt(max(fi["fwhm_rel"] ** 2 - nt ** 2, 0.0)) if np.isfinite(nt) else np.nan
             print(f"  {n:10s} {fi['mu']:11.0f} {fi['err']:7.0f} {fi['mu'] / q_pe:8.1f} {fi['mu'] / q_pe / 511:7.2f} "
-                  f"{fi['s']:8.0f} {100 * fi['fwhm_rel']:8.1f}% {fi['n']:6d}")
+                  f"{fi['s']:8.0f} {100 * fi['fwhm_rel']:8.1f}% {fi['n']:6d} {noise[n]:7.0f} {100 * nt:9.1f}% {100 * after:5.1f}%")
         else:
             print(f"  {n:10s} no fit ({fi['why']})")
+    print(f"  noise: clipped rms of the same sum over the control charges of the selected events (FWHM term 2.355 noise/peak); "
+          f"after: the width with it subtracted in quadrature; {int((sel & okc).sum())} events with a valid control window")
     print(f"  decay ({args.decay_model} exp.): {dec_label} over [{t0d / 1000:g}, {t1d / 1000:g}] us after the maximum"
           if dec["ok"] else f"  decay: no fit ({dec['why']})")
     print(f"  pile-up: second maximum searched outside the window extended by {args.veto:g} us on each side")
@@ -255,8 +296,11 @@ def main():
                    decay_fast_us=dec.get("tau1", np.nan) / 1000 if dec["ok"] and args.decay_model == 2 else None,
                    decay_fast_err_us=dec.get("err1", np.nan) / 1000 if dec["ok"] and args.decay_model == 2 else None,
                    decay_fast_fraction=dec.get("f1") if dec["ok"] and args.decay_model == 2 else None,
-                   no_gain=no_g,
-                   estimators={n: dict(mu=fi["mu"], err=fi["err"], s=fi["s"], fwhm_rel=fi["fwhm_rel"], n=fi["n"], ok=fi["ok"])
+                   no_gain=no_g, nb_full=nb_full,
+                   prewindow={lab: {n: dict(mu=fi["mu"], err=fi["err"], fwhm_rel=fi["fwhm_rel"], n=fi["n"], ok=fi["ok"])
+                                    for n, fi in d.items()} for lab, d in pre_fits.items()},
+                   estimators={n: dict(mu=fi["mu"], err=fi["err"], s=fi["s"], fwhm_rel=fi["fwhm_rel"], n=fi["n"], ok=fi["ok"],
+                                       noise=float(noise[n]) if np.isfinite(noise[n]) else None)
                                for n, fi in fits.items()})
     with open(out.replace("_offline.h5", "_offline.json"), "w") as fo:
         json.dump(summary, fo, indent=1, default=float)
@@ -320,11 +364,30 @@ def main():
         map8(axs[2], {c: v for c, v in n_map.items() if v > 0}, "events per seed channel", "{:.0f}")
         fig.suptitle(f"{run}: Q_0_eq by seed channel, REAL without pile-up", x=0.01, ha="left")
         fig.tight_layout(); figs["seedmap"] = fig
+    if pre_fits:
+        fig, axs = plt.subplots(1, 2, figsize=(12, 4.2))
+        for ax, n in zip(axs, ("Q_0_eq", "Q_0_pos")):
+            top = np.percentile(est[n][sel], 99.5)
+            for i, (lab, m) in enumerate(pre_groups):
+                fi = pre_fits[lab][n]
+                if (sel & m).sum() == 0:
+                    continue
+                label = f"{lab}: {int((sel & m).sum())} events" + (f", peak {fi['mu']:.3g}, FWHM {100 * fi['fwhm_rel']:.1f}%" if fi["ok"] else "")
+                if fi["h"] is not None:                              # the histogram the fit was made on
+                    ax.stairs(fi["h"], fi["edges"], baseline=None, color=f"C{i}", lw=1.2, label=label)
+                else:
+                    ax.hist(est[n][sel & m], bins=200, range=(0, top), histtype="step", color=f"C{i}", lw=1.2, label=label)
+                if fi["ok"]:
+                    x = np.linspace(fi["lo"], fi["hi"], 200)
+                    ax.plot(x, peak_bg(x, *fi["p"]), color=f"C{i}", lw=1.0, ls="--")
+            ax.set(title=n, xlabel="ADC ns", ylabel="events", xlim=(0, top)); ax.title.set_fontsize(9); ax.grid(lw=0.3); ax.legend(fontsize=7)
+        fig.suptitle(f"{run}: the photopeak by pre-window of the baseline, REAL without pile-up", x=0.01, ha="left")
+        fig.tight_layout(); figs["prewindow"] = fig
     if args.save:
         PLOTS.mkdir(exist_ok=True)
         for tag, fg in figs.items():
             fg.savefig(PLOTS / f"{args.save}_{tag}.png", dpi=130)
-        print(f"  figures saved as {PLOTS}/{args.save}_{{spectra,classes,pulse,pileup,seedmap}}.png")
+        print(f"  figures saved as {PLOTS}/{args.save}_{{{','.join(figs)}}}.png")
     else:
         plt.show()
 

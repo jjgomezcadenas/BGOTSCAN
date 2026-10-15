@@ -109,6 +109,40 @@ end
     @test 300 <= imx[3] <= 400
 end
 
+@testset "control_window_adjacent" begin
+    clo, chi, ok = control_window_adjacent(1000, 626, 125, 250, 3000)
+    @test chi == 2750 && clo == 2125 && ok
+    clo, chi, ok = control_window_adjacent(2100, 626, 125, 250, 3000)   # baseline before the control overlaps the window
+    @test !ok
+    clo, chi, ok = control_window_adjacent(100, 626, 125, 250, 700)     # record too short for a control
+    @test !ok && clo < 1
+    clo, chi, ok = control_window_adjacent(2124, 626, 0, 250, 3000)     # no pre-window: the control may start right after the window
+    @test ok && clo == 2125
+    @test !control_window_adjacent(2124, 626, 1, 250, 3000)[3]
+end
+
+@testset "channel_charges_adjacent" begin
+    ns, nch = 1000, 4
+    y = zeros(ns, nch)
+    y[:, 2] .= 2.0                      # constant: baseline 2, charge 0
+    y[300:400, 3] .= 5.0                # 101 samples of 5 in channel 3, inside the window
+    y[1:299, 4] .= 1.0; y[451:ns, 4] .= 3.0     # a step across the window: baseline (125 * 1 + 250 * 3) / 375 = 2.333
+    q, qctrl, imx = channel_charges_adjacent(y, 250, 450, 600, 800, 125, 250, 1, 8.0)
+    @test q[1] == 0 && q[2] == 0 && q[3] ≈ 8.0 * 5 * 101
+    @test q[4] ≈ 8.0 * (50 * 1.0 - (125 * 1 + 250 * 3) / 375 * 201) rtol = 1e-12   # 50 samples of 1 inside the window
+    @test qctrl[3] == 0 && qctrl[2] == 0
+    @test 300 <= imx[3] <= 400
+    q2, qctrl2, _ = channel_charges_adjacent(y, 250, 450, 0, 800, 125, 250, 1, 8.0)   # no control window
+    @test q2 == q && all(isnan, qctrl2)
+    q3, _, _ = channel_charges_adjacent(y, 50, 450, 600, 800, 125, 250, 1, 8.0)       # window at the record start: before side clipped
+    @test q3[3] ≈ 8.0 * 5 * 101
+    q4, qctrl4, _ = channel_charges_adjacent(y, 250, 450, 600, 800, 0, 250, 1, 8.0)   # no pre-window: baseline from the after-window alone
+    @test q4[4] ≈ 8.0 * (50 * 1.0 - 3.0 * 201) rtol = 1e-12
+    @test q4[3] ≈ 8.0 * 5 * 101 && qctrl4[2] == 0
+    q5, _, _ = channel_charges_adjacent(y, 250, 450, 600, 800, 50, 250, 1, 8.0)      # a partial pre-window of 50 samples
+    @test q5[4] ≈ 8.0 * (50 * 1.0 - (50 * 1 + 250 * 3) / 300 * 201) rtol = 1e-12
+end
+
 @testset "matched_filter and spe_candidates" begin
     T = [0.0, 0.2, 0.6, 1.0, 0.5, 0.2, 0.0]
     x = zeros(200)
@@ -155,21 +189,28 @@ end
     T = read_template(TEMPLATE)
     openrun(FIXTURE) do run
         w = waveforms(run, 1)
-        p = (baselines = run.baselines, nbase = 50, nsm = 8, a = 10, b = 40, cm = "interp",
-             edge = 8, dead_cols = Int[], cm_smooth = 25, chbase = "end", pre_hi = 15, post_lo = 60, post_hi = 80,
-             dt = run.tsample_ns, t = time_axis(run), T = T, ntail = 100, nsig = 4.5)
-        r = process_event(w, p)
-        @test length(r.S) == run.nsamp && all(isfinite, r.S)
-        @test length(r.q) == run.nch && length(r.tc) == run.nch
-        @test r.win[1] >= 1 && r.win[2] <= run.nsamp
-        @test length(r.spe_sigma) == run.nch
+        for chbase in ("end", "adjacent")
+            p = (baselines = run.baselines, nbase = 50, nsm = 8, a = 10, b = 40, cm = "interp",
+                 edge = 8, dead_cols = Int[], cm_smooth = 25, chbase = chbase, pre_hi = 15, post_lo = 60, post_hi = 80,
+                 nb = 10, na = 20, nb_min = 3, dt = run.tsample_ns, t = time_axis(run), T = T, ntail = 100, nsig = 4.5)
+            r = process_event(w, p)
+            @test length(r.S) == run.nsamp && all(isfinite, r.S)
+            @test length(r.q) == run.nch && length(r.tc) == run.nch && all(isfinite, r.q)
+            @test r.win[1] >= 1 && r.win[2] <= run.nsamp
+            @test r.room_before == (r.win[1] - 10 >= 1) && r.room_after == (r.win[2] + 20 <= run.nsamp)
+            imax = findfirst(==(r.t_max), p.t)
+            @test r.whole == (imax - 10 >= 1 && r.win[2] + 20 <= run.nsamp)
+            nb_av = min(10, r.win[1] - 1)
+            @test r.nb_used == (nb_av >= 3 ? nb_av : 0)
+            @test length(r.spe_sigma) == run.nch
+        end
     end
 end
 
 @testset "pass end to end against the Python dumps" begin
     if isfile(REAL_FIXTURE) && isfile(DUMP_SEL) && isfile(DUMP_SPE)
         out = tempname() * ".h5"
-        pass(REAL_FIXTURE, out; template = TEMPLATE, verbose = false)
+        pass(REAL_FIXTURE, out; template = TEMPLATE, cm = "dead", chbase = "end", verbose = false)   # the dumps' options
         sel = JSON_parse(read(DUMP_SEL, String))
         spe = JSON_parse(read(DUMP_SPE, String))
         h5open(out, "r") do f

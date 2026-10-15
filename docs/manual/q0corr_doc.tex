@@ -1,0 +1,82 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\code{q0corr.py}: the seed-channel correction, step by step}
+\author{BGOTSCAN}
+\date{2026-10-15}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+The figures of the note \code{docs/q0\_correction.tex}: the response
+correction by seed channel that \code{offline.py} applies to the
+equalized positive sum $Q^{\rm eq}_0$ to obtain $Q^{\rm pos}_0$, shown
+one step at a time on one run. The script reads the per-event file of
+\code{offline.py} (\code{pass/RUN\_offline.h5}: $Q^{\rm eq}_0$,
+$Q^{\rm pos}_0$, the seed channel, the class and the pile-up flag) and
+repeats the measurement of the photopeak position per seed channel that
+\code{offline.py} makes, before and after the correction. The definitions
+are those of \code{offline\_doc.tex}, "Response correction by seed
+channel".
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/q0corr.py RUN [--channels 24,34,48,3] [--min-events 40] [--save NAME]
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{l l p{80mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{RUN} & & run name, e.g. \code{195K\_41V\_th20}; reads \code{pass/RUN\_offline.h5} \\
+\code{--channels LIST} & 24,34,48,3 & seed channels drawn one by one in the \code{seeds} figure \\
+\code{--min-events N} & 40 & events a channel needs as seed to get a position \\
+\code{--save NAME} & & save the figures as \code{src/py/plots/NAME\_q0corr\_*.png} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Sample: REAL events without pile-up. For every channel $k$ that is the
+seed of at least $N$ of them, the photopeak position $\mu_k$ is the
+highest maximum of the smoothed 60-bin histogram of $Q^{\rm eq}_0$ over
+those events, between zero and the 99.5th percentile of the whole
+sample; the same on $Q^{\rm pos}_0$ gives $\mu'_k$. The terminal prints
+one line per channel (events, $\mu_k$ and $\mu'_k$ relative to their
+medians) and the spread of each set, rms over median.
+
+\section{Figures}
+
+\paragraph{\code{seedmap}.} Two maps of the array: $\mu_k$ over its
+median before the correction, and $\mu'_k$ over its median after.
+
+\paragraph{\code{seeds}.} Two panels. Left, the $Q^{\rm eq}_0$ spectrum
+of the events whose seed is each of the channels of \code{--channels},
+with its $\mu_k$ as a dashed line and the median as a black line; right,
+the same events on $Q^{\rm pos}_0$.
+
+\paragraph{\code{spectra}.} The whole sample on $Q^{\rm eq}_0$ and on
+$Q^{\rm pos}_0$, with the photopeak fit of \code{offline.py} (Gaussian on
+a step) and its width.
+
+\section{Example}
+
+\begin{lstlisting}
+python3 src/py/q0corr.py 195K_41V_th20 --save 195K_41V     # docs/figs/q0corr_195K_{seedmap,seeds,spectra}.png
+\end{lstlisting}
+
+\end{document}

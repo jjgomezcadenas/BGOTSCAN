@@ -1,0 +1,88 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small, columns=fullflexible, keepspaces=true,
+  breaklines=true, frame=single, framerule=0.3pt, rulecolor=\color{gray}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\us}{\textmu s}
+
+\title{\code{noisetoy.py}: the expectation for white, independent noise}
+\author{BGOTSCAN}
+\date{2026-10-15}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+
+The note on the Antarctica runs (\code{docs/antarctica.tex}) opens with
+the structure of the noise and, for each measurement, states first what
+white, independent noise would give. This script draws those
+expectations from simulated channels with the geometry and the rms of
+the data, so that the measured figures of \code{wavefit.py} and
+\code{cmnoise.py} can be read against them.
+
+\section{Usage}
+
+\begin{lstlisting}
+python3 src/py/noisetoy.py [--sigma 3.8] [--samples 1500] [--channels 64] [--events 236] [--common 0] [--save NAME]
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{l l p{80mm}}
+\toprule
+option & default & meaning \\
+\midrule
+\code{--sigma S} & 3.8 & rms per sample, counts (the measured value) \\
+\code{--samples N} & 1500 & samples per record (12~\us{} at 8~ns, the tail used in the data) \\
+\code{--channels C} & 64 & channels \\
+\code{--events E} & 236 & records \\
+\code{--common A} & 0 & rms of a component common to all channels, counts, for the third figure \\
+\code{--seed} & 1 & random seed \\
+\code{--save NAME} & & save the figures as \code{src/py/plots/NAME\_noisetoy\_*.png} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Figures}
+
+\paragraph{\code{channel}: one channel.} Gaussian white noise of rms
+$\sigma$ per sample. Three panels: the power spectrum, flat up to the
+Nyquist frequency of 62.5~MHz, averaged over the records; the
+autocorrelation, 1 at zero lag and 0 elsewhere, on the raw samples and
+on the 62-sample running mean, where the smoothing spreads the spike
+over its width; and the rms of the running mean against its width $N$,
+following $\sigma/\sqrt N$, from 1 sample to 5~\us{} (the last points fall below the line because the mean of the
+record is removed before smoothing and the running mean is evaluated away from the edges: a finite-record effect,
+present identically in the measured figure of \code{wavefit.py}).
+
+\paragraph{\code{channels}: independent channels.} $C$ channels of the
+same noise, independent. Two panels: the correlation matrix of their
+125-sample running means over the records, ones on the diagonal and
+zero elsewhere within the statistical scatter $1/\sqrt{\rm samples}$;
+and the rms of the sum of $n$ channels against $n$, following
+$\sigma\sqrt n$, for the raw samples and for the running means.
+
+\paragraph{\code{common}: a correlated component.} Only with
+\code{--common} above zero: the same two panels with a slow component
+of rms $A$ (a 1~\us{} running mean of white noise, scaled) added to
+every channel. The matrix shows a uniform off-diagonal value
+$A^2/(A^2 + \sigma_{\rm slow}^2)$ and the sum grows faster than
+$\sqrt n$, towards $n$. This is what a common noise would look like in
+the measured figures.
+
+\section{Examples}
+
+\begin{lstlisting}
+python3 src/py/noisetoy.py --save toy            # docs/figs/noisetoy_channel.png, noisetoy_channels.png
+python3 src/py/noisetoy.py --common 0.3 --save toyc
+\end{lstlisting}
+
+\end{document}

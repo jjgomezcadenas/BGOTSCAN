@@ -280,6 +280,22 @@ def main():
     fig.suptitle(f"{run}: excursions of the live median in the tail (kicks of the trigger logic?)", x=0.01, ha="left")
     fig.tight_layout(); figs["kick"] = fig
 
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4.2))
+    axs[0].hist(L_off, bins=40, histtype="step", color="C0", lw=1.2, label=f"live mean, rms {L_off.std():.2f}")
+    axs[0].hist(D_off, bins=40, histtype="step", color="C3", lw=1.2, label=f"dead mean, rms {D_off.std():.2f}")
+    axs[0].set(xlabel="offset of the record from the run baseline (ADC)", ylabel="events", title="mean over the tail, per event")
+    axs[1].plot(L_off, D_off, ".", ms=4, color="C0")
+    axs[1].set(xlabel="live mean (ADC)", ylabel="dead mean (ADC)", title=f"the two offsets, correlation {np.corrcoef(L_off, D_off)[0, 1]:.2f}")
+    im = axs[2].imshow(Co, vmin=-0.2, vmax=1, cmap="RdBu_r")
+    axs[2].set(xlabel="channel", ylabel="channel", title=f"correlation of the per-channel offsets between events: live-live "
+               f"{Co[np.ix_(live, live)][off_diag[np.ix_(live, live)]].mean():.2f}, dead-dead {Co[np.ix_(~live, ~live)][off_diag[np.ix_(~live, ~live)]].mean():.2f}")
+    fig.colorbar(im, ax=axs[2], shrink=0.8)
+    for ax in axs:
+        ax.title.set_fontsize(9); ax.grid(lw=0.3)
+    axs[0].legend(fontsize=8)
+    fig.suptitle(f"{run}: offsets between events, {n} events", x=0.01, ha="left")
+    fig.tight_layout(); figs["offsets"] = fig
+
     if args.save:
         PLOTS.mkdir(exist_ok=True)
         for name, fg in figs.items():

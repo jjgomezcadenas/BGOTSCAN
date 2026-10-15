@@ -3,7 +3,8 @@
 #
 #   julia --project=src/jscan src/jscan/pass.jl RUN [--out DIR] [--events a:b]
 #         [--template FILE] [--cm dead|interp|median|none] [--dead LIST] [--cm-smooth 125]
-#         [--chbase end|line] [--guard 0.4] [--post-window 10,12] [--edge 32] [--baseline-window 250]
+#         [--chbase adjacent|end|line] [--adj-before 1] [--adj-after 2] [--adj-min 0.25] [--guard 0.4] [--post-window 10,12]
+#         [--edge 32] [--baseline-window 250]
 #         [--smooth 64] [--window 1000,4000] [--tail 10] [--nsigma 4.5] [--block 200]
 
 using JScan
@@ -18,8 +19,9 @@ end
 
 function parse_args(args)
     opts = Dict{String,Any}("out" => joinpath(REPO, "pass"), "events" => nothing, "template" => nothing,
-                            "cm" => "dead", "dead" => JScan.DEAD, "cm-smooth" => 125,
-                            "chbase" => "end", "guard" => 0.4, "post-window" => (10.0, 12.0),
+                            "cm" => "none", "dead" => JScan.DEAD, "cm-smooth" => 125,
+                            "chbase" => "adjacent", "guard" => 0.4, "post-window" => (10.0, 12.0),
+                            "adj-before" => 1.0, "adj-after" => 2.0, "adj-min" => 0.25,
                             "edge" => 32, "baseline-window" => 250, "smooth" => 64,
                             "window" => (1000.0, 4000.0), "tail" => 10.0, "nsigma" => 4.5, "block" => 200)
     pos = String[]
@@ -36,7 +38,7 @@ function parse_args(args)
                         key in ("window", "post-window") ? Tuple(parse.(Float64, split(v, ","))) :
                         key == "dead" ? parse.(Int, split(v, ",")) :
                         key in ("edge", "baseline-window", "smooth", "block", "cm-smooth") ? parse(Int, v) :
-                        key in ("tail", "nsigma", "guard") ? parse(Float64, v) : v
+                        key in ("tail", "nsigma", "guard", "adj-before", "adj-after", "adj-min") ? parse(Float64, v) : v
         else
             push!(pos, a)
         end
@@ -61,7 +63,7 @@ function main()
     t0 = time()
     pass(path, out; template = template, events = o["events"], cm = o["cm"], dead = o["dead"],
          cm_smooth = o["cm-smooth"], edge = o["edge"], chbase = o["chbase"], guard_us = o["guard"],
-         post_window = o["post-window"],
+         post_window = o["post-window"], adj_before_us = o["adj-before"], adj_after_us = o["adj-after"], adj_min_us = o["adj-min"],
          nbase = o["baseline-window"], nsm = o["smooth"], window = o["window"], tail_us = o["tail"],
          nsig = o["nsigma"], block = o["block"])
     println("done in $(round(time() - t0, digits = 1)) s")

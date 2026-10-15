@@ -7,6 +7,78 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
 
 ## 2026-10-15
 
+### The full window at 3 tau, every whole window kept: the sample doubles, the noise term grows (`src/jscan/pass.jl`, `src/py/offline.py`)
+
+- The pass of the afternoon (no common mode, per-channel baseline from
+  the 1 us before and the 2 us after the window, window 1 + 4 us) on
+  195K_41V_th20, 196K_40d5V_th20 and 184K_40V_th19: SHORT (no room for
+  the full pre-window) took 45 to 51% of the events, not a third; and
+  the 2 us after-window sat on the tail (23% of the height at 4 us =
+  1.5 tau), so Q_0 came out at 487k against 564k with the end-of-record
+  baseline: a constant 14% loss, not a resolution term. Results on the
+  1903 REAL events without pile-up at 41 V: Q_0_eq 467k, 38.3% FWHM,
+  noise term 13.2%, 36.0% after; Q_0_pos 28.5%, 24.9% after (814 of the
+  1903 with a seed channel without factor). 40.5 V, 1676 events: Q_0_pos
+  24.7%, 18.8% after. 184K_40V_th19: Q_0_pos 29.3%, 23.6% after; both
+  lines visible, ratio near 2.5; decay 3.07 us.
+- Decided (evening): the window ends at 3 tau after the maximum (8.1 us
+  at 196 K), so the after-window sits where the exponential is 5 to 2.4%
+  of its height (a constant loss of about 8%, computable per run from
+  the fitted decay); the full window with its noise measured on the
+  control charges and subtracted in quadrature is the estimator, all the
+  light, 95% of the exponential instead of 78%; the pre-window is the
+  samples the record has, up to 1 us, with a floor of 0.25 us, below it
+  the after-window alone; SHORT is only a window cut by the record start
+  or without its 2 us after-window. Statistical error on the remainder
+  after subtraction, 1900 events: 16.0 +- 0.7% for the full window
+  against 18.0 +- 0.5% for the clipped one, no cost that matters. The
+  pass writes `events/short` and `events/nb_used`; offline.py splits the
+  photopeak by pre-window group (figure `prewindow`) and falls back to
+  one exponential when the two agree within 10% or an error exceeds half
+  its value.
+- Results, REAL without pile-up, window 1 + 8.1 us (figures
+  `src/py/plots/195K_41V_*`, `196K_40d5V_*`):
+
+  | | 41 V | 40.5 V |
+  |---|---|---|
+  | EMPTY / REAL / TAIL / SHORT | 8.5 / 86.8 / 2.0 / 2.7% | 8.4 / 87.6 / 1.6 / 2.4% |
+  | REAL without pile-up | 4115 | 4126 |
+  | Q_0_eq peak (ADC ns) | 608 400 +- 4600 | 514 600 +- 3400 |
+  | Q_0_eq noise (ADC ns) | 42 800 | 42 400 |
+  | Q_0_eq width / noise term / remainder | 38.2 +- 0.4 / 16.6 +- 0.2 / 34.4 +- 0.5% | 35.6 +- 0.4 / 19.4 +- 0.2 / 29.8 +- 0.5% |
+  | Q_all_eq width / noise term / remainder | 40.3 +- 0.4 / 18.4 +- 0.2 / 35.9 +- 0.5% | 36.6 +- 0.4 / 21.8 +- 0.2 / 29.3 +- 0.5% |
+  | Q_0_pos width / noise term / remainder | 20.7 +- 0.2 / 17.0 +- 0.2 / 11.9 +- 0.5% | 19.5 +- 0.2 / 19.6 +- 0.2 / 0 |
+  | decay, one exponential | 2.723 +- 0.008 us | 2.690 +- 0.008 us |
+
+  Q_0 at 41 V 635k against 487k with the 4 us window (the 1.3 of 95%
+  over 78% less the 8% of the after-window). The noise of Q_0_eq grew
+  from 26 100 to 42 800 ADC ns, a factor 1.64 for a window 1.82 times
+  longer, between the square root and the linear scaling. The
+  two-exponential fit is degenerate on both runs.
+- The noise term of a positive-only sum (Q_0, Q_0_pos) from the control
+  charges is an overestimate: in the event the mask keeps the channels
+  whose noise came out positive, whose fluctuation is smaller than a
+  full noise sample over the same channels, which is what the control
+  gives; at 40.5 V the term equals the observed width and the remainder
+  is zero. The subtraction is exact for the unmasked sums (Q_all_eq:
+  remainder 36 and 29%, with the position spread still inside). The
+  estimator with both properties is the response correction applied to
+  the full sum, the per-channel correction of the scope (B9), to do.
+- The pre-window split tests the trigger, not the baseline: full
+  against partial pre-window, Q_0_pos peak 604 400 +- 4600 against
+  586 700 +- 4200 at 41 V (2018 and 2054 events), 529 300 +- 4600
+  against 524 100 +- 3400 at 40.5 V (1797 and 2262); 43 and 67 events
+  with the after-window alone. The 1275 keV line sits almost entirely
+  in the full-pre-window group: the maximum of a prompt trigger lands
+  about 0.25 us after it, past the 2 us boundary, and the bright events
+  trigger promptly; the partial group is the late triggers, the dimmer
+  events, with its 511 keV peak 1 to 3% lower. A direct test of the
+  baseline is a pass of the same run with `--adj-before 0.5`, the same
+  events with two pre-windows.
+- Pile-up flagged fell from 16.7% to 5.2%: the search region beyond the
+  window shrank, and a second pulse inside the 9 us window goes
+  unflagged, about 4% of the events at the 4 kHz real rate.
+
 ### The 39 V test: the trigger-rate noise is not the width (`src/jscan/pass.jl`, `src/py/offline.py`)
 
 - Pass of 197K_39V_th20 with the current defaults (dead-channel common
@@ -40,6 +112,147 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
   charges of low- and high-multiplicity photopeak events, by eye, to
   decide whether the factor 1.8 is in the light (position, dead block)
   or in our per-channel charge.
+
+### Scope of the full pass, agreed 2026-10-15 (docs/antarctica.tex: "BGO scan: the Antarctica runs", the step-by-step note)
+
+A. The pass (Julia), one file per run; each step with its plot.
+- A1 Windows per run from the average pulse: 1 us before the maximum,
+  a fixed multiple of the decay time after; a per-run table the pass
+  reads; record length and pre-trigger from the file. Plot: the average
+  pulse per run, linear and log, with the window shaded and the decay fit.
+- A2 Pulse search on the equalized sum of the live channels, no common
+  mode: smoothed sum, maximum, height against the smoothed noise, rising
+  edge. Plot: per run, the distributions of the height over noise and
+  of t_max.
+- A3 Classes, in this order: EMPTY (no pulse), TAIL (no rising edge),
+  SHORT (less than 1 us of record before the window or 2 us after it),
+  REAL (pile-up flag when a second maximum stands beyond the window and
+  its veto). Plot: the height spectrum by class and the class fractions
+  per run; across runs, the SHORT fraction against the trigger rate.
+- A4 Single-photoelectron candidates in the last 10 us of every event
+  of every class, skipping events with a second maximum in the search
+  region. Plot: candidates per class (SHORT events contribute), the
+  amplitude spectrum with the fit per channel and the gain map (spefit).
+- A5 Per channel, REAL events only: baseline as the mean of the 1 us
+  before and the 2 us after the window; charge over the window; time of
+  the channel maximum; a control charge of the same geometry on an
+  empty stretch of the tail. Plot: one event, one channel, the waveform
+  with the window, the two baseline stretches and the level; per run,
+  the control-charge width per channel on the map.
+- A6 Output per event: times, window, height, class, flags; for REAL
+  events the 64 charges, 64 control charges, 64 channel times; the
+  summed waveform; metadata with run conditions, parameters, commit.
+
+B. Offline (Python), per run.
+- B7 Sample: REAL without pile-up; the fraction removed as SHORT per
+  run; the photopeak position against the SHORT fraction across runs
+  as the check that the selection does not favour bright events. Plot:
+  that scatter across runs.
+- B8 Equalization: the SPE gain table from 41 V; channel 48 and the
+  seven without a factor from their light response. Plot: the gain map
+  and the light-response map, before and after.
+- B9 Response correction: per seed channel first, then per channel from
+  the data, applied before the sum. Plot: the per-seed-channel peak map
+  before and after, and the photopeak before and after.
+- B10 Estimators: equalized sum of all live channels (reference),
+  positive-only and zero-suppressed for comparison; the same sums on
+  the control charges are the noise of each. Plot: the spectra with
+  fits and, beside each, the control-charge spectrum with its width.
+- B11 Photopeaks: 511 keV and 1275 keV where present, Gaussian on a
+  Compton step; light output in ADC ns and photoelectrons; FWHM over
+  peak. Plot: the spectrum with both fits and the step.
+- B12 Decay time from the average pulse, one or two exponentials. Plot:
+  the average pulse with the fit, linear and log.
+
+C. Resolution budget per run, each term measured: electronic noise
+  (control charges), photoelectron statistics (peak in photoelectrons,
+  with the crosstalk and afterpulsing excess from the SPE charge against
+  its amplitude), response non-uniformity (spread of the per-channel
+  peaks before and after correction), equalization error (gain table
+  errors), Compton under the peak (the fit's step), the remainder.
+  Plot: stacked quadrature terms per run against the measured width.
+
+D. Deliverables (scan.py): per run one table line (T3, bias,
+  overvoltage, trigger rate, class fractions, 511 keV peak in ADC ns
+  and photoelectrons, resolution and budget, decay time, 511 to 1275
+  ratio); light output against temperature raw and corrected for the
+  overvoltage (gain linear in overvoltage, breakdown from the datasheet
+  slope anchored at the 196 K scan and the 253 K run, PDE saturated,
+  the crosstalk and afterpulsing excess the stated systematic); decay
+  time against temperature; resolution and budget against temperature
+  and bias. Plots: those four, plus the 511 to 1275 ratio per run as the
+  trigger check.
+
+Runs: 195K_41V_th20 and 196K_40d5V_th20 only (T3 195.8 and 196.2 K,
+-77 C, the Antarctica runs): both hold the 511 keV line intact (ratio
+2.5 and 2.4 to 1275 keV), 41 V carries the gain table, 40.5 V has a fifth
+of the pile-up and is the control. The 253 K run and the colder runs get
+their own notes, each with its window and its trigger check.
+Documents kept in step: the pass, offline.py, scan.py, the window table.
+Expectation figures for white, independent noise from src/py/noisetoy.py
+(noisetoy_doc.tex). The note absorbs pre_analysis.tex (retired
+2026-10-15): the detector with the array figure of chanmap.py, the scan,
+the acquisition, the single photoelectron; dropped from it the filter
+study and the refined template, which gained nothing, and the dark-pulse
+search at 39 V. The dead channels' "charge noise of white noise" is not
+carried over (in doubt, see above).
+
+### The noise, settled on empty windows; the baseline adopted (`src/py/wavefit.py`, `docs/manual/wavefit_doc.tex`)
+
+- Method: the charge of a 5 us window with nothing in it, in the tail of
+  the record (12 to 24 us), per channel and for the sum, over 236 clean
+  events of 195K_41V_th20 (245 of 197K_39V_th20, same numbers within
+  10%): the scatter of that charge is the noise a baseline method leaves
+  on a real charge, with no signal at risk. Scatter in ADC ns, 41 V:
+
+  | Baseline per channel | dead | live | sum of 52 live |
+  |---|---|---|---|
+  | end of record, last 2 us (the pass) | 3473 | 3581 | 29 000 |
+  | mean of the 2 us right after the window | 3044 | 3130 | 26 600 |
+  | line on 1 us before and 6 us after | 2540 | 2670 | 26 600 |
+  | line on the after side only | 5114 | 5238 | 45 900 |
+  | line + sinusoid | 2595 | 2770 | 31 000 |
+  | end of record after the dead-channel common mode | 3350 | 3719 | 60 000 |
+  | white noise, 4 counts | 756 | 756 | 5 400 |
+
+- The dead-channel common mode of the pass is the noise of the sum: the
+  raw sum scatters by 29 000, close to the 25 800 of independent
+  channels (the common part is small); subtracting the running mean of
+  the 12 dead channels injects their own slow noise, 3473 / sqrt(12) x
+  52 = 52 000, and the sum goes to 60 000 (the 66 000 of offline.py).
+  Within a record the dead channels share nothing with the live ones
+  (correlation 0.00): the subtraction removes nothing. Dropped.
+- The slow noise per channel is broadband, 1/f-like, the same in dead
+  and live channels (3473 against 3581), independent of bias and trigger
+  rate; the single-channel spectra show no line, the autocorrelation one
+  lobe to 1.5 us and nothing after. It is in the front-end or the
+  digitizer. Samples more than about 1.5 us from the window know
+  nothing of the noise inside it: a baseline from adjacent samples on
+  both sides gains 1.37, from the after side alone 1.14 (a slope
+  extrapolated from one side hurts: 0.68), and no model fitted outside
+  can reach the white floor, 3.4 times below.
+- Withdrawn from the entry below and from cmnoise_doc.tex: the "slow
+  oscillation near 0.33 MHz" (a noisy spectrum of the mean at 0.08 MHz
+  resolution; no line in any single channel) and the "wave" wording.
+  In doubt: chanstat's "charge noise of pure white noise" for the dead
+  channels, contradicted by the 3473 above; to be rechecked there.
+- Between events, the per-channel offsets from the run baseline (1.3
+  counts rms per channel) are correlated by digitizer group: 0.5 to 0.6
+  within each block of 16 channels (0-15, 16-31, 32-47, 48-63), 0.2 to
+  0.3 across blocks, dead and live alike (figure
+  docs/figs/cmnoise_195K_offsets.png). An offset of the digitizer's
+  groups, record to record; any baseline taken inside the record
+  removes it.
+- Adopted (2026-10-15, evening): no common mode; per channel, the
+  baseline from the mean of the 1 us before and the 2 us after the
+  window (or the line through them) for the events whose window has
+  room before it (maximum at least 2 us into the record, two thirds of
+  the events at 41 V; these are also the events whose window is not
+  cut by the record start, which cost 8% of the peak); the others kept
+  in the output with a flag and excluded from the spectra; then the gain
+  table, then the sum. Expected: the sum's noise from 66 000 to about
+  27 000, the per-channel noise from 3700 to 2600. For Laura: the
+  front-end's 1/f noise, 3.4 times white per channel, is now the floor.
 
 ### The noise is not the trigger: a slow oscillation in every channel, a weak common part in the biased ones (`src/py/cmnoise.py`, `docs/manual/cmnoise_doc.tex`)
 
