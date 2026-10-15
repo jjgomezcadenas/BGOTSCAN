@@ -2,7 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .io import PLOTS
+from .io import PLOTS, plot_dir
 
 
 class Stepper:
@@ -11,8 +11,8 @@ class Stepper:
     show() returns "next" (go on), "skip" (abandon this event), "quit", or ("k", value) when
     ask_k is set and a number was typed."""
 
-    def __init__(self, save, run, event, names):
-        self.save, self.run, self.event, self.names = save, run, event, names
+    def __init__(self, save, run, event, names, script="step"):
+        self.save, self.run, self.event, self.names, self.script = save, run, event, names, script
         self.fig = None
         self.silent = False                 # True for steps before --from-step: compute only
         if not save:
@@ -26,8 +26,7 @@ class Stepper:
                      x=0.01, ha="left")
         fig.tight_layout()
         if self.save:
-            PLOTS.mkdir(exist_ok=True)
-            out = PLOTS / f"{self.save}_ev{self.event}_s{step}.png"
+            out = plot_dir(self.run) / f"{self.save}_{self.script}_ev{self.event}_s{step}.png"
             fig.savefig(out, dpi=130)
             print(f"  saved {out}")
             plt.close(fig)

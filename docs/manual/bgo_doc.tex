@@ -47,7 +47,7 @@ name & meaning \\
 name & meaning \\
 \midrule
 \endhead
-\code{REPO}, \code{DATA}, \code{PLOTS}, \code{PASS}, \code{MAP} & the repository, the data directory (\code{2026\_10\_02\_bgo\_cryo\_tempscan/data\_cryo}), the scratch figures (\code{src/py/plots}, not in git), the pass output (\code{pass/}, not in git), the channel map (\code{src/channel\_map.csv}) \\
+\code{REPO}, \code{DATA}, \code{PLOTS}, \code{PASS}, \code{MAP} & the repository, the data directory (\code{2026\_10\_02\_bgo\_cryo\_tempscan/data\_cryo}), the scratch figures (\code{src/py/plots}, not in git; \code{plot\_dir(run)} gives \code{src/py/plots/RUN/}, created, for the scripts that know their run, and \code{run\_name} strips a path to the run name), the pass output (\code{pass/}, not in git), the channel map (\code{src/channel\_map.csv}) \\
 \code{parse\_events(spec)} & \code{"a-b"} (inclusive) or \code{"a,b,c"} to a list of 0-based event indices \\
 \code{find\_run(run, data\_dir)} & a run name with or without \code{.h5}, or a path, to the file; exits with a message if absent \\
 \code{find\_pass(run, pass\_dir=PASS)} & a run name or a path to its pass output \code{RUN\_pass.h5} \\

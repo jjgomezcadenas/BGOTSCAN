@@ -14,7 +14,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import DATA, PLOTS, find_run, parse_events
+from bgo.io import DATA, find_run, parse_events, plot_dir
 from bgo.signal import smooth
 
 CHUNK = 500
@@ -139,9 +139,8 @@ def main():
         figs.append(("average", fig))
 
     if args.save:
-        PLOTS.mkdir(exist_ok=True)
         for tag, fig in figs:
-            out = PLOTS / f"{args.save}_{tag}.png"
+            out = plot_dir(args.run) / f"{args.save}_{tag}.png"
             fig.savefig(out, dpi=130)
             print(f"saved {out}")
     else:

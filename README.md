@@ -42,7 +42,7 @@ The file layout (datasets and attributes) is documented in
   files with h5py; their shared code is the package `src/py/bgo/`. `wfview.py` is the waveform viewer, `runinfo.py` tabulates
   the run conditions and trigger rates, `selection.py` walks through the
   event selection one event at a time. Figures they save go to
-  `src/py/plots/` (not in git).
+  `src/py/plots/RUN/` (not in git), one folder per run.
 - `src/h5lzf/`: the LZF compression filter of h5py as an HDF5 plugin, needed
   for Julia to read the LZF-compressed files (h5py has it built in). See
   below.

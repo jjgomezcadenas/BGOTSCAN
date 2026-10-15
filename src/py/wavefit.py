@@ -14,7 +14,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import DATA, PASS, PLOTS, find_run, parse_events
+from bgo.io import DATA, PASS, find_run, parse_events, plot_dir
 from bgo.signal import smooth, clipped_rms
 from bgo.plot import map8
 
@@ -260,10 +260,9 @@ def main():
     fig.tight_layout(); figs["sum"] = fig
 
     if args.save:
-        PLOTS.mkdir(exist_ok=True)
         for name, fg in figs.items():
-            fg.savefig(PLOTS / f"{args.save}_wavefit_{name}.png", dpi=130)
-        print(f"  figures saved as {PLOTS}/{args.save}_wavefit_{{{','.join(figs)}}}.png")
+            fg.savefig(plot_dir(args.run) / f"{args.save}_wavefit_{name}.png", dpi=130)
+        print(f"  figures saved as {plot_dir(args.run)}/{args.save}_wavefit_{{{','.join(figs)}}}.png")
     else:
         plt.show()
 

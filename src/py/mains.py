@@ -13,7 +13,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import PLOTS, find_pass
+from bgo.io import find_pass, plot_dir
 
 
 def main():
@@ -59,8 +59,7 @@ def main():
     fig.suptitle(f"{run}: the end-of-record baseline of the sum", x=0.01, ha="left")
     fig.tight_layout()
     if args.save:
-        PLOTS.mkdir(exist_ok=True)
-        out = PLOTS / f"{args.save}_mains.png"
+        out = plot_dir(args.run) / f"{args.save}_mains.png"
         fig.savefig(out, dpi=130)
         print(f"saved {out}")
     else:

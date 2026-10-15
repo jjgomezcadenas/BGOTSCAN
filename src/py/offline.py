@@ -16,7 +16,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import PLOTS, REPO, find_pass, read_map
+from bgo.io import REPO, find_pass, read_map, plot_dir
 from bgo.signal import smooth, rms, clipped_rms, pulse_search, windows
 from bgo.fit import fit_photopeak, find_photopeak, peak_bg, fit_decay, decay, fit_decay2, decay2
 from bgo.plot import map8
@@ -469,10 +469,9 @@ def main():
         fig.suptitle(f"{run}: the photopeak by pre-window of the baseline, REAL without pile-up", x=0.01, ha="left")
         fig.tight_layout(); figs["prewindow"] = fig
     if args.save:
-        PLOTS.mkdir(exist_ok=True)
         for tag, fg in figs.items():
-            fg.savefig(PLOTS / f"{args.save}_{tag}.png", dpi=130)
-        print(f"  figures saved as {PLOTS}/{args.save}_{{{','.join(figs)}}}.png")
+            fg.savefig(plot_dir(args.run) / f"{args.save}_{tag}.png", dpi=130)
+        print(f"  figures saved as {plot_dir(args.run)}/{args.save}_{{{','.join(figs)}}}.png")
     else:
         plt.show()
 

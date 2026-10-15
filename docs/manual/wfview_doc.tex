@@ -47,7 +47,7 @@ option & default & meaning \\
 \code{--smooth N} & 0 & width of the moving average in samples; 0 = off \\
 \code{--channels} & off & also show the 64 channels of the first selected event \\
 \code{--average} & off & also show the average summed pulse of the whole run \\
-\code{--save NAME} & off & save the figures as PNG under \code{src/py/plots/} with the prefix \code{NAME}; without it the figures are shown on screen \\
+\code{--save NAME} & off & save the figures as PNG under \code{src/py/plots/RUN/} with the prefix \code{NAME}; without it the figures are shown on screen \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -109,7 +109,7 @@ python3 src/py/wfview.py 128K_37V_th19 --events 0-3 --smooth 64
 # one event with its 64 channels
 python3 src/py/wfview.py 128K_37V_th19 --events 7 --channels
 
-# average pulse of the warm run, saved to src/py/plots/187K_*.png
+# average pulse of the warm run, saved to src/py/plots/187K_38d5V_th19/187K_*.png
 python3 src/py/wfview.py 187K_38d5V_th19 --average --save 187K
 \end{lstlisting}
 

@@ -12,7 +12,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import PLOTS, find_pass
+from bgo.io import find_pass, plot_dir
 from bgo.fit import ABIN, AMAX, gauss, fit_peak, crosstalk_ratio
 from bgo.plot import map8
 
@@ -134,9 +134,8 @@ def main():
     fig2.suptitle(f"{run}: per-channel SPE spectra and fits (A in ADC)", x=0.01, ha="left")
     fig2.tight_layout()
     if args.save:
-        PLOTS.mkdir(exist_ok=True)
         for tag, fg in (("spefit", fig), ("spefit_channels", fig2)):
-            out = PLOTS / f"{args.save}_{tag}.png"
+            out = plot_dir(args.run) / f"{args.save}_{tag}.png"
             fg.savefig(out, dpi=130)
             print(f"  saved {out}")
     else:

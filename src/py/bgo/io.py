@@ -9,6 +9,22 @@ HERE = Path(__file__).resolve().parent          # src/py/bgo
 REPO = HERE.parent.parent.parent
 DATA = REPO / "2026_10_02_bgo_cryo_tempscan" / "data_cryo"
 PLOTS = HERE.parent / "plots"                   # src/py/plots, not in git
+
+
+def run_name(run):
+    """Run name from a run name or a path to a run, pass or offline file."""
+    s = Path(str(run)).stem
+    for suf in ("_offline", "_pass"):
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+    return s
+
+
+def plot_dir(run=None):
+    """Where the figures go: src/py/plots/<run>/ for a run (name or file path), src/py/plots/ otherwise; created."""
+    d = PLOTS / run_name(run) if run else PLOTS
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 PASS = REPO / "pass"                            # output of the JScan pass, not in git
 MAP = REPO / "src" / "channel_map.csv"
 

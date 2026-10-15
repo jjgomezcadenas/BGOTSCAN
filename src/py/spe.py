@@ -18,7 +18,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import DATA, PLOTS, REPO, find_run, parse_events, read_template
+from bgo.io import DATA, REPO, find_run, parse_events, read_template, plot_dir
 from bgo.signal import rms, clipped_rms, search_region, find_candidates, matched, channel_search
 from bgo.fit import ABIN, AMAX, gauss, fit_peak, crosstalk_ratio
 from bgo.plot import Stepper, grid64, map8
@@ -250,7 +250,7 @@ def main():
         k = int(np.flatnonzero(channels == args.channel)[0])
         out = dict(region=region, b=float(np.median(w[k])))
         out["x"] = w[k] - out["b"]
-        st = Stepper(args.save, path.stem, e, names=STEPS)
+        st = Stepper(args.save, path.stem, e, names=STEPS, script="spe")
         last = e == events[-1]
         steps = [lambda: step1(ev, st, out, args), lambda: step2(ev, st, out, args),
                  lambda: step3(ev, st, out, args), lambda: step4(ev, st, out, args),
@@ -279,10 +279,10 @@ def main():
             json.dump(dump, fo)
         print(f"dump written to {args.dump} ({len(dump)} events)")
     if args.summary and args.save:
-        src = PLOTS / f"{args.save}_ev{events[-1]}_s6.png"
+        src = plot_dir(args.run) / f"{args.save}_spe_ev{events[-1]}_s6.png"
         if src.exists():
-            src.rename(PLOTS / f"{args.save}_spe.png")
-            print(f"saved {PLOTS / (args.save + '_spe.png')}")
+            src.rename(plot_dir(args.run) / f"{args.save}_spe.png")
+            print(f"saved {plot_dir(args.run) / (args.save + '_spe.png')}")
     if args.csv and acc.get("rows"):
         with open(args.csv, "w", newline="") as fo:
             fo.write(f"# SPE amplitudes of {path.stem}: {acc['events']} events, template {tpath.name}, "

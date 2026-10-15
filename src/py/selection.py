@@ -18,7 +18,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import DATA, PLOTS, find_run, parse_events
+from bgo.io import DATA, find_run, parse_events, plot_dir
 from bgo.signal import smooth, rms, baseline_window, pulse_search, windows, interp_cm
 from bgo.plot import Stepper, grid64
 
@@ -397,7 +397,7 @@ def main():
     for e in events:
         ev = load_event(f, e, meas)
         ev["run"] = path.stem
-        st = Stepper(args.save, path.stem, e, names=STEPS)
+        st = Stepper(args.save, path.stem, e, names=STEPS, script="selection")
         out = {}
         steps = [lambda: step1(ev, st), lambda: step2(ev, st, out, args)] + [
             (lambda f: (lambda: f(ev, st, out, args)))(f)

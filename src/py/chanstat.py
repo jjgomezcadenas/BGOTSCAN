@@ -15,7 +15,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import DATA, PLOTS, find_run, parse_events, read_map
+from bgo.io import DATA, find_run, parse_events, read_map, plot_dir
 from bgo.signal import smooth, rms, clipped_rms, search_region, find_candidates
 from bgo.plot import map8
 
@@ -168,7 +168,7 @@ def main():
         figw.suptitle(f"{path.stem}: the wander in the last {args.tail:g} us of {len(wander)} events", x=0.01, ha="left")
         figw.tight_layout()
         if args.save:
-            figw.savefig(PLOTS / f"{args.save}_wander.png", dpi=130)
+            figw.savefig(plot_dir(args.run) / f"{args.save}_wander.png", dpi=130)
     else:
         print("\nno event with an early pulse: no wander monitor")
 
@@ -181,8 +181,7 @@ def main():
     fig.suptitle(f"{path.stem}: {N} events", x=0.01, ha="left")
     fig.tight_layout()
     if args.save:
-        PLOTS.mkdir(exist_ok=True)
-        out = PLOTS / f"{args.save}_chanstat.png"
+        out = plot_dir(args.run) / f"{args.save}_chanstat.png"
         fig.savefig(out, dpi=130)
         print(f"saved {out}")
     else:

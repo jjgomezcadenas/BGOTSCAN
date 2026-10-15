@@ -15,7 +15,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import DATA, PASS, PLOTS, find_run, parse_events, read_map
+from bgo.io import DATA, PASS, find_run, parse_events, read_map, plot_dir
 from bgo.signal import smooth, rms, clipped_rms
 
 DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
@@ -297,10 +297,9 @@ def main():
     fig.tight_layout(); figs["offsets"] = fig
 
     if args.save:
-        PLOTS.mkdir(exist_ok=True)
         for name, fg in figs.items():
-            fg.savefig(PLOTS / f"{args.save}_cmnoise_{name}.png", dpi=130)
-        print(f"  figures saved as {PLOTS}/{args.save}_cmnoise_{{{','.join(figs)}}}.png")
+            fg.savefig(plot_dir(args.run) / f"{args.save}_cmnoise_{name}.png", dpi=130)
+        print(f"  figures saved as {plot_dir(args.run)}/{args.save}_cmnoise_{{{','.join(figs)}}}.png")
     else:
         plt.show()
 

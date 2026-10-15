@@ -65,7 +65,7 @@ option & default & meaning \\
 \code{--tail T} & 10 & length of the tail region in \us \\
 \code{--nsigma K} & 4.5 & candidate threshold on the filtered waveform, in units of its noise \\
 \code{--from-step N} & 1 & start the display at this step \\
-\code{--save NAME} & off & no prompts; figures saved as \code{src/py/plots/NAME\_evE\_sN.png} \\
+\code{--save NAME} & off & no prompts; figures saved as \code{src/py/plots/RUN/NAME\_evE\_sN.png} \\
 \code{--summary} & off & no prompts and no per-event figures; the step~6 text and figure after the last event, saved as \code{NAME\_spe.png} with \code{--save} \\
 \code{--csv FILE} & off & write the per-channel table of step~6 to \code{FILE} \\
 \code{--dump FILE} & off & write the candidates of every channel per event (time, $A$) and $\sigma_y$ to a JSON file (reference for the tests of the Julia pass) \\
@@ -191,7 +191,7 @@ option & default & meaning \\
 \code{--channel C} & 48 & the channel whose spectrum is shown alone \\
 \code{--min-pulses N} & 30 & channels with fewer candidates are not fitted \\
 \code{--dead LIST} & the twelve of \code{chanstat\_doc.tex} & excluded from the reference and the maps \\
-\code{--save NAME} & off & figures saved as \code{src/py/plots/NAME\_spefit.png} and \code{NAME\_spefit\_channels.png}; otherwise shown \\
+\code{--save NAME} & off & figures saved as \code{src/py/plots/RUN/NAME\_spefit.png} and \code{NAME\_spefit\_channels.png}; otherwise shown \\
 \code{--csv FILE} & off & write the per-channel table (channel, $n$, $A_1$, error, $w_1$, $g_c$, rate) \\
 \bottomrule
 \end{tabular}

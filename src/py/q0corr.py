@@ -11,7 +11,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from bgo.io import PLOTS, PASS
+from bgo.io import PASS, plot_dir
 from bgo.fit import fit_photopeak, find_photopeak, peak_bg
 from bgo.plot import map8
 
@@ -104,10 +104,9 @@ def main():
     fig.tight_layout(); figs["spectra"] = fig
 
     if args.save:
-        PLOTS.mkdir(exist_ok=True)
         for tag, fg in figs.items():
-            fg.savefig(PLOTS / f"{args.save}_q0corr_{tag}.png", dpi=130)
-        print(f"  figures saved as {PLOTS}/{args.save}_q0corr_{{{','.join(figs)}}}.png")
+            fg.savefig(plot_dir(args.run) / f"{args.save}_q0corr_{tag}.png", dpi=130)
+        print(f"  figures saved as {plot_dir(args.run)}/{args.save}_q0corr_{{{','.join(figs)}}}.png")
     else:
         plt.show()
 

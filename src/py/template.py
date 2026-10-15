@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 from scipy.linalg import toeplitz
 
-from bgo.io import DATA, PLOTS, find_run, parse_events
+from bgo.io import DATA, find_run, parse_events, plot_dir
 from bgo.signal import rms, clipped_rms, search_region, find_candidates, matched
 from bgo.plot import Stepper, grid64
 
@@ -357,7 +357,7 @@ def main():
         k = int(np.flatnonzero(channels == args.channel)[0])
         out = dict(region=region)
         out["x"] = w[k] - np.median(w[k])
-        st = Stepper(args.save, path.stem, e, names=STEPS)
+        st = Stepper(args.save, path.stem, e, names=STEPS, script="template")
         last = e == events[-1]
         accumulate(ev, out, args, acc)
         steps = [lambda: step1(ev, st, out, args), lambda: step2(ev, st, out, args),
@@ -382,10 +382,10 @@ def main():
             print()
     if args.summary and args.save:
         for n in range(3, 8):
-            src = PLOTS / f"{args.save}_ev{events[-1]}_s{n}.png"
+            src = plot_dir(args.run) / f"{args.save}_template_ev{events[-1]}_s{n}.png"
             if src.exists():
-                src.rename(PLOTS / f"{args.save}_s{n}.png")
-        print(f"figures saved as {PLOTS}/{args.save}_s3..7.png")
+                src.rename(plot_dir(args.run) / f"{args.save}_template_s{n}.png")
+        print(f"figures saved as {plot_dir(args.run)}/{args.save}_template_s3..7.png")
     if args.write and acc.get("T1") is not None:
         H = args.half
         _, allp = all_pulses(acc)
