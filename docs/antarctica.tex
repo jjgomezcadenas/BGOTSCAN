@@ -88,57 +88,29 @@ number of dark pulses above 20 counts; bottom left displays the fraction of even
 in which the channel carries a significant charge in the signal
 window ($S/N >5$); the bottom right panel shows and the mean charge for events where $S/N >5$.
 The noise is uniform, 3.4 to 4.3 counts rms per channel.
-
-Twelve channels are dead: 19 to 23, 25, 27, 33, 35, 41, 46 and 47. They
-have the noise of every other channel, no dark pulse above 16 or 20 counts
-in 20~ms of search time, a lit fraction of exactly zero in 500 events, and
-a charge noise 30\% below the live channels, which is what pure white noise
-gives when there are no pulses at all. They see no light and no dark
-counts: no bias, or no connection. On the face they form a block, the
-right five of the third row, two columns at the left of rows 4 to 6, and
-two cells at the right of row 6, 19\% of the area. Light that falls on them
-is lost. Whether these channels were known to be dead, and whether the
-fault is in the SiPMs, the bias or the cables, is a question for the
-people who took the data.
-
-Four channels, 11, 12, 48 and 49, stand out the other way. Their noise is
-at most 12\% above the median, so they are not noisy. They have five times
-the dark pulses above 20 counts of the others, they are lit in 34 to 37\%
-of the events against a median of 11\%, and when lit they carry 30 to
-50\% more charge. One cause explains the four numbers: a larger gain.
-Larger single photoelectrons cross a fixed threshold more often, the same
-light gives more charge, and the channel passes a significance cut more
-often. The recurring cluster at these channels is therefore a gain pattern,
-not a position. Section~\ref{sec:spe} measures the gain and settles where
-it comes from.
-
-Channel 44 has normal noise and dark pulses but a charge noise three times
-the others, and it is lit in 1\% of the events with twice the charge: its
-baseline wanders slowly. It is kept with that caveat. The lit fraction of
-the remaining 47 channels is flat across the face, 7 to 20\% with no edge
-or row pattern: the source does illuminate the whole crystal, and at this
-level the channel map shows nothing wrong, though the dead block hides part
-of it.
+Twelve channels are dead: 19 to 23, 25, 27, 33, 35, 41, 46 and 47
+(see Figure ~\ref{fig:chanmap}). 
+Four channels, 11, 12, 48 and 49, have abnormal high gain. 
+Channel 44 is particularly troublesome. It has normal noise and dark pulses but a charge noise too high and its
+baseline wanders slowly.
 
 \subsection{The scan}
 \label{sec:data}
 
-Twelve runs of 5000 events each were taken, at crystal temperatures from
+Twelve runs of 5000 events each were taken, at temperatures from
 128 to 197~K (Table~\ref{tab:runs}). Along the temperature scan the bias
 was raised with the temperature, from 37 to 41~V in steps of 1~V, to keep
 the overvoltage of the SiPMs nominally constant. Two bias scans were added
-at the warm end: at about 185~K the bias was lowered from 40~V to 38.5~V in
+at the highest temperature: at about 185~K the bias was lowered from 40~V to 38.5~V in
 steps of 0.5~V, and at about 196~K from 41~V to 39~V, each step a run of
 5000 events. The runs are named after the crystal temperature, the bias and
 the trigger threshold: \code{185K\_39d5V\_th19} is 185~K, 39.5~V, 19 ADC
 counts.
 
-\begin{table}[tbp]
+PLOT HERE. 
+
+\begin{table}[tbhp!]
 \centering
-\caption{The runs, in order of acquisition, with the three thermometer
-readings in kelvin (from \code{temperatures.txt}), the SiPM bias and the
-trigger threshold. The last column is the true trigger rate of the board,
-from Section~\ref{sec:daq}.}
 \label{tab:runs}
 \begin{tabular}{l l r r r r r r}
 \toprule
@@ -159,28 +131,15 @@ run & start & T1 & T2 & T3 & bias (V) & threshold & trigger rate \\
 197K\_39V\_th20   & 15:35 & 184.1 & 201.9 & 197.3 & 39.0 & 20 & 2.7 kHz \\
 \bottomrule
 \end{tabular}
+\caption{The runs, in order of acquisition, with the three thermometer
+readings in kelvin, the SiPM bias and the
+trigger threshold. The last column is the true trigger rate.}
 \end{table}
 
-The temperatures were not stabilised; the runs were taken in a hurry,
-each one about a minute after the previous one. The consequences are
-visible in the table. Within each bias scan the crystal temperature T3
-rises from run to run, from 184.8 to 187.4~K in the first and from 195.8 to
-197.3~K in the second, while T2 is steady in the first and relaxing from an
-overshoot in the second: the frame was at its temperature, and the crystal,
-isolated by the Teflon, was still catching up. For the analysis each run
-is taken at its measured T3, and a bias scan is not at one temperature but
-spread over 1.5 to 2.6~K. The effect of that spread on the light yield is
-a correction of the order of a percent, small against the effect of the
-bias.
-
-The frame also had a strong vertical gradient at the warm end: T1 and T2
-differ by 9~K in the first bias scan and by about 20~K in the second,
-bottom warmer. The SiPM board is mounted on the frame, so the SiPMs were
-probably warmer than the crystal, somewhere between T3 and T2, and the
-bottom rows possibly warmer than the top rows. This matters for the
-overvoltage, which depends on the SiPM temperature, and we come back to it
-in the next section.
-
+The temperatures were not stable and 
+the frame had a vertical gradient at high temperatures. The SiPM board is mounted on the frame, and therefore
+ the SiPMs were probably warmer than the crystal, somewhere between T3 and T2. This has an effect on the
+ overvoltage, which depends on the SiPM temperature, as I will discuss below. 
 \subsection{The two runs}
 \label{sec:sipm}
 

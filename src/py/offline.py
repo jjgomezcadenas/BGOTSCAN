@@ -24,7 +24,7 @@ from bgo.plot import map8
 DEAD = "19,20,21,22,23,25,27,33,35,41,46,47"      # chanstat_doc.tex, 2026-10-14
 GAIN = REPO / "src" / "spe_gain_195K_41V_th20.csv"
 CLASSES = ("EMPTY", "REAL", "TAIL", "SHORT")
-ESTIMATORS = ("Q", "Q_all", "Q_0", "Q_kept", "Q_all_eq", "Q_0_eq", "Q_kept_eq", "Q_0_pos")
+ESTIMATORS = ("Q", "Q_all", "Q_0", "Q_kept", "Q_all_eq", "Q_0_eq", "Q_kept_eq", "Q_0_pos", "Q_0_posf", "Q_all_posf")
 
 
 def attr_str(a):
@@ -47,6 +47,24 @@ def read_gain(path):
             if row["g"]:
                 g[int(row["channel"])] = float(row["g"])
     return g, a1
+
+
+def seed_peak(vals, nbins=60, top=None):
+    """Photopeak position of one seed-channel population: the Gaussian-on-a-step fit of fit_photopeak when it
+    works (100 events or more), else the mode of the smoothed histogram interpolated with a parabola through
+    the three bins around its maximum. Returns (mu, 'fit' | 'mode')."""
+    if len(vals) >= 100:
+        fi = fit_photopeak(vals, nbins=nbins)
+        if fi["ok"]:
+            return fi["mu"], "fit"
+    h, edges = np.histogram(vals, bins=nbins, range=(0, top))
+    cc = 0.5 * (edges[1:] + edges[:-1])
+    hs = np.convolve(h, np.ones(3) / 3, mode="same")
+    k = int(np.clip(hs.argmax(), 1, nbins - 2))
+    y0, y1, y2 = hs[k - 1], hs[k], hs[k + 1]
+    d = y0 - 2 * y1 + y2
+    shift = 0.5 * (y0 - y2) / d if d < 0 else 0.0
+    return cc[k] + shift * (cc[1] - cc[0]), "mode"
 
 
 def main():
@@ -198,8 +216,31 @@ def main():
     ctrl["Q_0_pos"] = np.where(np.isfinite(f_ev), ctrl["Q_0_eq"] / np.where(np.isfinite(f_ev), f_ev, 1.0), ctrl["Q_0_eq"])
     print(f"  Q_0_pos = Q_0_eq / f(seed channel), f from the peaks above; {int(no_f.sum())} of {int(sel.sum())} events "
           f"with a seed channel without factor (left as they are)")
+    # the same correction with a fitted (or interpolated) peak per seed channel, on the masked sum and on the
+    # unmasked sum, each factor measured on the sum it corrects
+    for new, base in (("Q_0_posf", "Q_0_eq"), ("Q_all_posf", "Q_all_eq")):
+        vals = est[base]
+        top = np.percentile(vals[sel], 99.5)
+        pk, how = {}, {"fit": 0, "mode": 0}
+        for c in channels:
+            m = sel & (seed_ch == c)
+            if n_map[c] >= 40:
+                pk[c], h_ = seed_peak(vals[m], 60, top)
+                how[h_] += 1
+        if not pk:
+            est[new] = vals.copy(); ctrl[new] = ctrl[base].copy()
+            continue
+        medp = np.median(list(pk.values()))
+        fk = np.array([pk.get(c, np.nan) / medp for c in channels])[seed]
+        fin = np.isfinite(fk)
+        est[new] = np.where(fin, vals / np.where(fin, fk, 1.0), vals)
+        ctrl[new] = np.where(fin, ctrl[base] / np.where(fin, fk, 1.0), ctrl[base])
+        pv_ = np.array(list(pk.values())) / medp
+        print(f"  {new} = {base} / f'(seed channel), f' from the peak of each seed channel on {base} ({how['fit']} fitted, "
+              f"{how['mode']} interpolated modes): spread {pv_.std():.3f}, range {pv_.min():.2f} to {pv_.max():.2f}; "
+              f"{int((sel & ~fin).sum())} events without factor")
     fits = {n: fit_photopeak(v[sel]) for n, v in est.items()}
-    for name in ("Q_0_eq", "Q_0_pos"):
+    for name in ("Q_0_eq", "Q_0_pos", "Q_all_posf"):
         vals = est[name]
         print(f"  {name} by multiplicity and time of the maximum:")
         for lab, m in (("multiplicity <= 6", mult <= 6), ("multiplicity 7 to 10", (mult > 6) & (mult <= 10)), ("multiplicity > 10", mult > 10),
@@ -253,18 +294,44 @@ def main():
     print(f"  classes: " + ", ".join(f"{n} {100 * frac[n]:.1f}%" for n in CLASSES)
           + f"; pile-up in REAL {100 * pile_frac:.1f}%; {sel.sum()} REAL without pile-up used")
     noise = {n: clipped_rms(ctrl[n][sel & okc]) if n in ctrl else np.nan for n in est}      # ADC ns, from the control charges
+    # the same over the EMPTY events (no pulse in the record): the noise of the electronics with nothing before it
+    empty = (cls == 0) & okc
+    noise_e = {n: clipped_rms(ctrl[n][empty]) if n in ctrl and empty.sum() >= 20 else np.nan for n in est}
     print(f"  {'estimator':10s} {'peak ADCns':>11s} {'err':>7s} {'peak PE':>8s} {'PE/keV':>7s} {'sigma':>8s} {'FWHM/peak':>9s} {'n':>6s} "
-          f"{'noise':>7s} {'noise/peak':>10s} {'after':>6s}")
+          f"{'noise':>7s} {'noise/peak':>10s} {'after':>6s} {'nz.EMPTY':>8s} {'after.E':>7s}")
+    after_e = {}
     for n, fi in fits.items():
         if fi["ok"]:
             nt = 2.355 * noise[n] / fi["mu"] if np.isfinite(noise[n]) else np.nan
             after = np.sqrt(max(fi["fwhm_rel"] ** 2 - nt ** 2, 0.0)) if np.isfinite(nt) else np.nan
+            nte = 2.355 * noise_e[n] / fi["mu"] if np.isfinite(noise_e[n]) else np.nan
+            after_e[n] = np.sqrt(max(fi["fwhm_rel"] ** 2 - nte ** 2, 0.0)) if np.isfinite(nte) else np.nan
             print(f"  {n:10s} {fi['mu']:11.0f} {fi['err']:7.0f} {fi['mu'] / q_pe:8.1f} {fi['mu'] / q_pe / 511:7.2f} "
-                  f"{fi['s']:8.0f} {100 * fi['fwhm_rel']:8.1f}% {fi['n']:6d} {noise[n]:7.0f} {100 * nt:9.1f}% {100 * after:5.1f}%")
+                  f"{fi['s']:8.0f} {100 * fi['fwhm_rel']:8.1f}% {fi['n']:6d} {noise[n]:7.0f} {100 * nt:9.1f}% {100 * after:5.1f}% "
+                  f"{noise_e[n]:8.0f} {100 * after_e[n]:6.1f}%")
         else:
             print(f"  {n:10s} no fit ({fi['why']})")
     print(f"  noise: clipped rms of the same sum over the control charges of the selected events (FWHM term 2.355 noise/peak); "
           f"after: the width with it subtracted in quadrature; {int((sel & okc).sum())} events with a valid control window")
+    print(f"  nz.EMPTY: the same rms over the {int(empty.sum())} EMPTY events with a valid control window (no pulse in the record; "
+          f"error on the rms {100 / np.sqrt(max(2 * empty.sum(), 1)):.0f}%); after.E: the width with that term subtracted")
+    # the control sum against the charge of the event: does the pulse feed the tail?
+    fq = fits["Q_all_eq"]
+    vq, vc = est["Q_all_eq"], ctrl["Q_all_eq"]
+    top = np.percentile(vq[sel], 99.5)
+    edges = np.linspace(0, top, 13)
+    cq, cmean, cerr, crms, cn = [], [], [], [], []
+    for lo_, hi_ in zip(edges[:-1], edges[1:]):
+        m = sel & okc & (vq >= lo_) & (vq < hi_)
+        if m.sum() >= 30:
+            v = vc[m]
+            cq.append(0.5 * (lo_ + hi_)); cmean.append(v.mean()); cerr.append(v.std() / np.sqrt(m.sum())); crms.append(clipped_rms(v)); cn.append(int(m.sum()))
+    cq, cmean, cerr, crms = (np.array(a) for a in (cq, cmean, cerr, crms))
+    slope = np.polyfit(cq, cmean, 1, w=1 / cerr)[0] if len(cq) >= 3 else np.nan
+    e_mean = vc[empty].mean() if empty.sum() else np.nan
+    e_err = vc[empty].std() / np.sqrt(empty.sum()) if empty.sum() else np.nan
+    print(f"  control sum (Q_all_eq) against the event charge: mean over EMPTY events {e_mean:.0f} +- {e_err:.0f} ADC ns; "
+          f"slope of the mean against the charge {100 * slope:.2f}% ; rms in the bins: " + ", ".join(f"{r:.0f}" for r in crms))
     print(f"  decay ({args.decay_model} exp.): {dec_label} over [{t0d / 1000:g}, {t1d / 1000:g}] us after the maximum"
           if dec["ok"] else f"  decay: no fit ({dec['why']})")
     print(f"  pile-up: second maximum searched outside the window extended by {args.veto:g} us on each side")
@@ -300,7 +367,8 @@ def main():
                    prewindow={lab: {n: dict(mu=fi["mu"], err=fi["err"], fwhm_rel=fi["fwhm_rel"], n=fi["n"], ok=fi["ok"])
                                     for n, fi in d.items()} for lab, d in pre_fits.items()},
                    estimators={n: dict(mu=fi["mu"], err=fi["err"], s=fi["s"], fwhm_rel=fi["fwhm_rel"], n=fi["n"], ok=fi["ok"],
-                                       noise=float(noise[n]) if np.isfinite(noise[n]) else None)
+                                       noise=float(noise[n]) if np.isfinite(noise[n]) else None,
+                                       noise_empty=float(noise_e[n]) if np.isfinite(noise_e[n]) else None)
                                for n, fi in fits.items()})
     with open(out.replace("_offline.h5", "_offline.json"), "w") as fo:
         json.dump(summary, fo, indent=1, default=float)
@@ -308,7 +376,7 @@ def main():
 
     # ---- figures ---------------------------------------------------------------------------
     figs = {}
-    fig, axs = plt.subplots(2, 4, figsize=(16, 7.5))
+    fig, axs = plt.subplots(2, 5, figsize=(19, 7.5))
     for ax, (n, fi) in zip(axs.flat, fits.items()):
         if fi["h"] is not None:
             ax.stairs(fi["h"], fi["edges"], color="C0", fill=True, alpha=0.6)
@@ -356,6 +424,23 @@ def main():
     ax.set(xlabel="time of the second maximum minus t_max (us)", ylabel="events", title=f"{run}: pile-up, {int(pile.sum())} events")
     ax.title.set_fontsize(10); ax.grid(lw=0.3); ax.legend(fontsize=8)
     fig.tight_layout(); figs["pileup"] = fig
+
+    fig, axs = plt.subplots(1, 2, figsize=(12, 4.2))
+    if fq["ok"]:
+        for ax in axs:
+            ax.axvspan(fq["mu"] - fq["s"], fq["mu"] + fq["s"], color="C3", alpha=0.12, lw=0, label="photopeak +- 1 sigma")
+    axs[0].errorbar(cq, cmean, yerr=cerr, fmt="o", color="C0", ms=4, label="REAL without pile-up, by charge")
+    axs[0].axhline(e_mean, color="C2", lw=1.2, label=f"EMPTY events: {e_mean:.0f} +- {e_err:.0f}")
+    axs[0].axhspan(e_mean - e_err, e_mean + e_err, color="C2", alpha=0.2, lw=0)
+    axs[0].set(xlabel="Q_all_eq of the event (ADC ns)", ylabel="mean control sum (ADC ns)", title=f"mean of the control sum; slope {100 * slope:.2f}%")
+    axs[1].plot(cq, crms, "o", color="C0", ms=4, label="REAL without pile-up, by charge")
+    axs[1].axhline(noise_e["Q_all_eq"], color="C2", lw=1.2, label=f"EMPTY events: {noise_e['Q_all_eq']:.0f}")
+    axs[1].axhline(noise["Q_all_eq"], color="C1", lw=1.2, ls="--", label=f"all REAL: {noise['Q_all_eq']:.0f}")
+    axs[1].set(xlabel="Q_all_eq of the event (ADC ns)", ylabel="clipped rms of the control sum (ADC ns)", title="width of the control sum", ylim=(0, None))
+    for ax in axs:
+        ax.title.set_fontsize(10); ax.grid(lw=0.3); ax.legend(fontsize=7)
+    fig.suptitle(f"{run}: the control sum of the live channels against the charge of the event", x=0.01, ha="left")
+    fig.tight_layout(); figs["ctrlvsq"] = fig
 
     if pos_map:
         fig, axs = plt.subplots(1, 3, figsize=(16, 5))

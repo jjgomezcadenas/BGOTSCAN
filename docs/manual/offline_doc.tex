@@ -31,7 +31,7 @@ fits the 511~keV photopeak of each, fits the decay of the average pulse,
 and writes a per-event table and a summary for the comparison across runs
 (\code{scan.py}). It reads only the pass output and the equalization table,
 runs in seconds, and is a batch script: no steps, one table on the
-terminal, six figures. The definitions of the classes and of the charges
+terminal, seven figures. The definitions of the classes and of the charges
 are those of \code{selection\_doc.tex} (steps 6 to 12); this document
 gives what is new: the charge noise from the data, the equalized charges,
 the photopeak and decay fits, the output.
@@ -58,7 +58,7 @@ option & default & meaning \\
 \code{--decay-range A,B} & \code{0.5,8} & \us{} after the maximum over which the decay is fitted to the average pulse; set per temperature \\
 \code{--decay-model N} & 2 & one or two exponentials in the decay fit \\
 \code{--veto V} & 2 & \us{} beyond each edge of the charge window where no second maximum is searched (pile-up) \\
-\code{--save NAME} & off & figures saved as \code{src/py/plots/NAME\_classes.png}, \code{NAME\_spectra.png}, \code{NAME\_pulse.png}, \code{NAME\_pileup.png}, \code{NAME\_seedmap.png}, \code{NAME\_prewindow.png}; otherwise shown \\
+\code{--save NAME} & off & figures saved as \code{src/py/plots/NAME\_classes.png}, \code{NAME\_spectra.png}, \code{NAME\_pulse.png}, \code{NAME\_pileup.png}, \code{NAME\_seedmap.png}, \code{NAME\_prewindow.png}, \code{NAME\_ctrlvsq.png}; otherwise shown \\
 \code{--out FILE} & \code{pass/RUN\_offline.h5} & per-event table; the summary goes next to it as \code{RUN\_offline.json} \\
 \bottomrule
 \end{tabular}
@@ -140,8 +140,8 @@ in $\Delta t$; a pile of entries just outside the window would be the tail
 of the main pulse passing as a second one.
 
 \paragraph{Spectra and photopeak.} For the REAL events without pile-up,
-the histogram of each of the eight charges ($Q$, the six from the
-channels and $Q^{\rm pos}_0$ below), 200 bins from zero to the 99.5th percentile. The photopeak is
+the histogram of each of the ten charges ($Q$, the six from the
+channels, $Q^{\rm pos}_0$ and the two of the fitted factor below), 200 bins from zero to the 99.5th percentile. The photopeak is
 located as the highest maximum of the smoothed histogram: the 511~keV
 peak dominates the spectrum, the Compton continuum lies below it and the
 1275~keV line is weaker (a rule that took the rightmost maximum above a
@@ -162,7 +162,7 @@ in ADC\,ns, and in photoelectrons $\mu / q_{\rm pe}$ with $q_{\rm pe} = A_1
 single-photoelectron amplitude of the gain table and $T$ the template of
 the pass; $A_1$ is measured at 41~V only, and the conversion is labelled
 with it. Resolution: $\mathrm{FWHM}/\mu = 2.355\, s / \mu$. Figure
-\code{spectra}: the seven spectra with their fits; figure \code{classes}:
+\code{spectra}: the ten spectra with their fits; figure \code{classes}:
 the $Q$ spectrum of each class.
 
 \paragraph{Where the light fell: the seed channel.} The seed channel of
@@ -198,6 +198,23 @@ measured on the run itself, with the events of the run: a mild
 overfit (one parameter per 40 events at least) and, when the spectrum
 holds two lines of similar weight, a meaningless one, since the located
 peak of a group may be either line (196K\_39d5V\_th20, 2026-10-15).
+
+Two more charges apply the same correction with a better measured
+factor (added 2026-10-15, the note \code{docs/q0\_correction.tex}): the
+position of each seed-channel group is the Gaussian-on-a-step fit of its
+spectrum when the group has 100 events or more and the fit works, else
+the mode of the smoothed 60-bin histogram interpolated with a parabola
+through the three bins around its maximum, instead of the centre of the
+highest bin (a 6\% step). $Q^{\rm posf}_0 = Q^{\rm eq}_0 / f'_{\rm seed}$
+with $f'$ measured on $Q^{\rm eq}_0$; $Q^{\rm posf}_{\rm all} =
+Q^{\rm eq}_{\rm all} / f''_{\rm seed}$ with $f''$ measured on
+$Q^{\rm eq}_{\rm all}$, the sum of all live channels without the
+positivity mask: linear in the charges, so its noise term from the
+control sums is exact, and without the pedestal that the mask adds (each
+unlit channel enters only when its noise is positive). The terminal
+prints, for each, how many factors were fitted and how many
+interpolated, the spread and the range of the factors, and the events
+without one. Ten charges are fitted, written and plotted.
 
 \paragraph{The pre-window.} The per-channel baseline of the pass uses
 the pre-window the record has, up to its full length $n_b$
@@ -239,6 +256,23 @@ a valid control window is the noise of the estimator, printed in
 ADC\,ns, as the FWHM term $2.355\,\sigma/\mu$, and as the width with that
 term subtracted in quadrature.
 
+The control window sits in the tail of the record, after the pulse, and
+the question is whether it measures the noise under the pulse. Two checks
+(added 2026-10-15). The same rms over the EMPTY events with a valid
+control window, events with no pulse anywhere in the record, is the
+noise of the electronics with nothing before it, in the same geometry
+and at the same place in the record (columns \code{nz.EMPTY} and
+\code{after.E} of the table, with the number of events and the
+statistical error of the rms printed below it; about one EMPTY event in
+six has a valid control window, the others have their pulse-search
+maximum too late in the record). And the control sum of
+$Q^{\rm eq}_{\rm all}$ in twelve bins of the event's
+$Q^{\rm eq}_{\rm all}$, its mean with its error and its clipped rms per
+bin, against the EMPTY-event values (figure \code{ctrlvsq}; the slope of
+the mean against the charge is printed). A mean that grows with the
+charge, or an rms above the EMPTY value, says that the pulse feeds the
+tail, and the noise under the pulse is then the EMPTY value.
+
 \paragraph{Table.} One line per estimator: position (ADC\,ns and
 photoelectrons), error, width, FWHM/position, number of events in the
 fit, noise, noise term and width after it; then the class fractions, the
@@ -250,6 +284,7 @@ nev: \code{index}, \code{cls} (0 EMPTY, 1 REAL, 2 TAIL, 3 SHORT), \code{pileup},
 \code{dt\_pile}, \code{t\_max}, \code{H}, \code{t\_rise}, \code{Q},
 \code{Q\_ctrl}, \code{Q\_all}, \code{Q\_0}, \code{Q\_kept},
 \code{Q\_all\_eq}, \code{Q\_0\_eq}, \code{Q\_kept\_eq}, \code{Q\_0\_pos},
+\code{Q\_0\_posf}, \code{Q\_all\_posf},
 \code{mult}, \code{seed}, \code{d\_dead}; the
 average pulse as \code{pulse} with its time axis; the options and the
 input files as attributes.
