@@ -129,13 +129,15 @@ figure of \code{offline.py}).
 \section{Limits}
 
 \begin{itemize}
-\item \textbf{Granularity of the factor.} $\mu_k$ is the centre of the
-  highest bin of a 60-bin histogram, 6\% of the peak wide: the positions
-  come in steps of 0.06 (0.81, 0.87, 0.94, 1.00, \dots), and after the
-  correction the re-measured positions scatter by 0.035 rms, one bin.
-  This is a term of about 8\% FWHM left in $Q^{\rm pos}_0$ by the
-  method itself. With 40 to 300 events per seed channel, a Gaussian fit
-  of each peak, or the interpolated mode, would remove most of it.
+\item \textbf{Granularity of the factor: none that matters.} $\mu_k$ is
+  the centre of the highest bin of a 60-bin histogram, 6\% of the peak
+  wide, so the positions come in steps of 0.06 (0.81, 0.87, 0.94, 1.00,
+  \dots). Measured with a Gaussian fit per seed channel (100 events or
+  more) or the parabola-interpolated mode ($Q^{\rm posf}_0$ of
+  \code{offline.py}), the line is 20.5\% instead of 20.7\%: the coarse
+  factor costs nothing visible. The 0.035 rms left after the correction
+  in figure~\ref{fig:map} is the granularity of the re-measurement, not
+  a width term (a first version of this note claimed 8\%; wrong).
 \item \textbf{Within one seed channel.} The width of a single population
   is 15 to 45\%, median 29\%, with the 17\% of noise inside: the
   collection varies across the 6~mm of one SiPM and the 20~mm of depth,
@@ -148,13 +150,21 @@ figure of \code{offline.py}).
   41~V, is a lower bound; at 40.5~V the term equals the width. The exact
   term is measured by noise injection: the control charges added to the
   event charges, the estimator recomputed with its mask, the broadening
-  of the line.
+  of the line. The control sums themselves must be taken at the
+  photopeak: their scatter grows with the charge of the event above
+  the photopeak (figure \code{ctrlvsq} of \code{offline.py}), and the
+  rms over all events overestimates the term for the 511~keV line.
+  With the photopeak term, the unmasked $Q^{\rm posf}_{\rm all}$ gives a
+  remainder of $14.9 \pm 0.5\%$ at 41~V and $9.5 \pm 1.0\%$ at 40.5~V,
+  a disagreement not understood (ANALYSIS.md, 2026-10-15).
 \item \textbf{The finer version.} Each channel $c$ with its own response
   $r_c$, the charge it collects in a photopeak event that lights it
   relative to the others, applied before the sum,
   $Q(e) = \sum_c q^{\rm eq}_c / r_c$, over all live channels and without
-  mask: the position correction and an exact noise subtraction in one
-  estimator. Not yet written.
+  mask. Not yet written. The seed factor on the unmasked sum,
+  $Q^{\rm posf}_{\rm all} = Q^{\rm eq}_{\rm all} / f_{s(e)}$, already
+  has the exact noise subtraction, at 22.2\% observed against 20.7\%
+  for the masked sum.
 \end{itemize}
 
 Figures by \code{src/py/q0corr.py} (\code{docs/manual/q0corr\_doc.tex}):

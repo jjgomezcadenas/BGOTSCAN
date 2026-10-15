@@ -7,6 +7,75 @@ overvoltage, from the 511 keV photopeak of the 22Na source.
 
 ## 2026-10-15
 
+### The seed factor refined, the unmasked sum, and what the control charges measure (`src/py/offline.py`, `src/py/q0corr.py`, `docs/q0_correction.tex`)
+
+- The seed-channel correction written out, step by step, in
+  docs/q0_correction.tex (figures docs/figs/q0corr_195K_*.png by
+  q0corr.py): the factor is the photopeak position of the events whose
+  seed is channel k, relative to the median over channels, and the
+  charge of the event is divided by the factor of its seed. On
+  195K_41V_th20 the positions spread by 0.109 rms (0.81 to 1.26) before
+  and 0.035 after, and the line goes from 38.2% to 20.7%. The 1275 keV
+  line, which the factor never used, goes from a smeared bump to a
+  resolved peak: the factor is a collection factor.
+- Two more estimators (commit 608b972): Q_0_posf, the same correction
+  with the factor from a Gaussian fit of each seed-channel population
+  (100+ events) or the parabola-interpolated mode (40 to 99), and
+  Q_all_posf, that factor measured on and applied to the unmasked sum
+  of all live channels. The fitted factor changes nothing: 20.5%
+  against 20.7% at 41 V, 19.6% against 19.5% at 40.5 V. The "8% FWHM
+  granularity term" of the first version of the note was wrong (the
+  0.035 after correction was the granularity of the re-measurement);
+  struck from the note. The unmasked sum is 1.5 points wider (22.2 and
+  21.6%), linear in the charges, without the pedestal of the mask (the
+  masked peak is 2.8% higher), and its noise term from the control sums
+  is exact.
+- The noise term from the control sums over all REAL events is wrong:
+  at 40.5 V it gives 22.1% for Q_all_posf, a line that is 21.6% wide;
+  a linear estimator cannot be narrower than its noise. The fits are
+  not at fault (checked by eye: the Gaussian follows the whole peak).
+  Two tests added to offline.py (columns nz.EMPTY / after.E, figure
+  ctrlvsq):
+  - The control sum of Q_all_eq against the charge of the event, in
+    twelve bins: the mean is flat (slope +0.20% at 41 V, -0.04% at
+    40.5 V): the pulse does not feed the tail; the afterpulsing
+    hypothesis is not supported, whatever feeds the tail is below 0.2%
+    of the charge. The rms is flat at 40 000 to 43 000 ADC ns for all
+    events below 0.7e6 and grows above, 55 000 to 115 000 across the
+    1275 keV region, in both runs; unexplained. The all-REAL term
+    (46 000) was inflated by the high-charge events. For the 511 keV
+    line the term is the one at the photopeak: 42 000 +- 900 at 41 V,
+    41 000 +- 900 at 40.5 V.
+  - The EMPTY events as a quiet noise sample: useless. Those with a
+    valid control window (154 and 175) give an rms of 550 000 and a
+    mean of -79 000 +- 44 000: records with large structures the pulse
+    search did not call a pulse. The class EMPTY is not "quiet record".
+- Remainder after subtracting the photopeak noise term, Q_all_posf:
+
+  | | 41 V | 40.5 V |
+  |---|---|---|
+  | observed | 22.2 +- 0.2% | 21.6 +- 0.2% |
+  | noise term at the photopeak | 16.5 +- 0.4% | 19.4 +- 0.4% |
+  | remainder | 14.9 +- 0.5% | 9.5 +- 1.0% |
+
+  The subtraction closes at both biases and the remainders disagree by
+  five points, five sigma, in the wrong direction (41 V has more
+  photoelectrons). Same electronics noise in ADC ns, same crystal and
+  source; what differs: overvoltage 6.5 against 6.0 V, trigger rate 225
+  against 148 kHz, dark rate per channel. Open, with the growth of the
+  control scatter with the charge.
+- Budget of the 20.7% of Q_0_pos at 41 V, as far as it can be written:
+  about two thirds of the variance is electronic noise, the rest is
+  the photoelectron statistics (930 photoelectrons, 7.7% by themselves,
+  more with the crosstalk and afterpulsing excess) and what the hole
+  leaves after the correction, which this chain cannot separate.
+- To do: the noise term of the table measured on the photopeak events
+  instead of all REAL events; the pre-window check repeated on the
+  same events with --adj-before 0.5; the 196K_40V_th20 run as a third
+  bias point for the remainder (its 511 keV line is partly sculpted by
+  the trigger, ratio 2.2 to 1275); the noise injection as the
+  cross-check of the masked estimators.
+
 ### The full window at 3 tau, every whole window kept: the sample doubles, the noise term grows (`src/jscan/pass.jl`, `src/py/offline.py`)
 
 - The pass of the afternoon (no common mode, per-channel baseline from
